@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>今日菜单 Supabase 版</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header class="topbar">
+        <div class="brand">
+          <p class="eyebrow">WLSA MENU</p>
+          <h1>菜单管理</h1>
+        </div>
+        <nav class="top-actions">
+          <button class="tab active" data-view="menu" type="button">今日菜单</button>
+          <button class="tab" data-view="week" type="button">一周菜单</button>
+          <button class="tab" data-view="vote" type="button">菜品投票</button>
+          <button class="tab" data-view="rank" type="button">菜品排行榜</button>
+          <button class="tab" data-view="admin" type="button">后台录入</button>
+          <button id="adminLoginButton" class="ghost" type="button">管理员登录</button>
+        </nav>
+      </header>
+
+      <section id="menuView" class="content">
+        <div class="search-row">
+          <div>
+            <p class="eyebrow">MENU SEARCH</p>
+            <h2>输入菜名，找到对应图片</h2>
+          </div>
+          <form id="searchForm" class="search-form">
+            <input id="searchInput" placeholder="例如：宫保鸡丁" autocomplete="off" />
+            <button class="primary" type="submit">搜索</button>
+          </form>
+        </div>
+        <div id="searchMessage" class="message">正在连接 Supabase...</div>
+        <div id="resultGrid" class="result-grid"></div>
+
+        <form id="recognitionForm" class="recognition-panel">
+          <div class="recognition-fields">
+            <label>菜单文字
+              <textarea id="recognitionText" rows="3" placeholder="粘贴较长菜单文字，系统会自动提取菜名"></textarea>
+            </label>
+            <label>菜单图片
+              <input id="recognitionImage" type="file" accept="image/jpeg,image/png,image/webp" />
+            </label>
+          </div>
+          <div class="recognition-actions">
+            <button class="primary" type="submit">OCR/AI识别菜名</button>
+            <button id="clearRecognition" class="secondary" type="button">清空</button>
+            <span id="recognitionFileName" class="message"></span>
+          </div>
+        </form>
+        <div id="recognitionMessage" class="message"></div>
+        <div id="recognitionGrid" class="recognition-grid"></div>
+      </section>
+
+      <section id="weekView" class="content hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">WEEKLY MENU</p>
+            <h2>一周菜品安排</h2>
+          </div>
+          <span class="count-badge">星期一至星期五</span>
+        </div>
+        <form id="weeklyMenuForm">
+          <div id="weekGrid" class="week-grid"></div>
+          <div class="form-actions">
+            <button class="primary" type="submit">保存一周菜单</button>
+            <span id="weeklyMessage" class="message"></span>
+          </div>
+        </form>
+      </section>
+
+      <section id="voteView" class="content hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">DISH VOTE</p>
+            <h2>菜品投票</h2>
+          </div>
+          <span id="voteCount" class="count-badge">0 个菜品</span>
+        </div>
+        <div id="voteMessage" class="message"></div>
+        <div id="voteGrid" class="vote-grid"></div>
+      </section>
+
+      <section id="rankView" class="content hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">DISH RANKING</p>
+            <h2>菜品排行榜</h2>
+          </div>
+          <span id="rankCount" class="count-badge">0 个菜品</span>
+        </div>
+        <div id="rankMessage" class="message"></div>
+        <div id="rankList" class="rank-list"></div>
+      </section>
+
+      <section id="adminView" class="content hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ADMIN DATA</p>
+            <h2>全部菜品数据</h2>
+          </div>
+          <span id="adminCount" class="count-badge">0 条记录</span>
+        </div>
+        <div class="admin-status">
+          <span id="adminStatusText">当前为公开维护模式，管理员账号可登录确认：admin / admin</span>
+          <button id="adminLogoutButton" class="secondary hidden" type="button">退出管理员</button>
+        </div>
+        <div class="admin-toolbar">
+          <form id="adminSearchForm" class="search-form">
+            <input id="adminSearchInput" placeholder="模糊搜索菜名" autocomplete="off" />
+            <button class="primary" type="submit">搜索</button>
+            <button id="clearAdminSearch" class="secondary" type="button">显示全部</button>
+          </form>
+        </div>
+        <div id="adminMessage" class="message"></div>
+        <div id="adminGrid" class="result-grid admin-grid"></div>
+
+        <div class="section-heading sub-heading">
+          <div>
+            <p class="eyebrow">NEW DISH</p>
+            <h2>录入新菜品</h2>
+          </div>
+        </div>
+        <form id="dishForm" class="upload-form">
+          <label>菜名<input id="dishName" required placeholder="请输入菜名" maxlength="120" /></label>
+          <label>菜品图片<input id="dishImage" type="file" accept="image/jpeg,image/png,image/webp" required /></label>
+          <div id="imagePreview" class="preview empty">选择图片后预览</div>
+          <button class="primary" type="submit">保存菜品</button>
+        </form>
+      </section>
+    </main>
+
+    <div id="commentModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="commentTitle">
+      <div class="modal-panel">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">COMMENTS</p>
+            <h2 id="commentTitle">菜品评论</h2>
+          </div>
+          <button id="commentClose" class="ghost modal-close" type="button">关闭</button>
+        </div>
+        <div id="commentList" class="comment-list"></div>
+        <label class="comment-input-label">
+          新增评论
+          <textarea id="commentInput" rows="3" maxlength="500" placeholder="输入评论内容，关闭时自动保存。"></textarea>
+        </label>
+        <div id="commentMessage" class="message"></div>
+      </div>
+    </div>
+
+    <div id="adminModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle">
+      <div class="modal-panel login-panel">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">ADMIN LOGIN</p>
+            <h2 id="adminLoginTitle">管理员登录</h2>
+          </div>
+          <button id="adminModalClose" class="ghost modal-close" type="button">关闭</button>
+        </div>
+        <form id="adminLoginForm" class="stack">
+          <label>账号<input id="adminUsername" autocomplete="username" required /></label>
+          <label>密码<input id="adminPassword" type="password" autocomplete="current-password" required /></label>
+          <button class="primary" type="submit">登录</button>
+        </form>
+        <div id="adminLoginMessage" class="message"></div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
