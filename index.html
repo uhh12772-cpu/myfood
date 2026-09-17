@@ -17,8 +17,9 @@
           <button class="tab active" data-view="menu" type="button">今日菜单</button>
           <button class="tab" data-view="week" type="button">一周菜单</button>
           <button class="tab" data-view="vote" type="button">菜品投票</button>
+          <button class="tab" data-view="survey" type="button">意见调查</button>
           <button class="tab" data-view="rank" type="button">菜品排行榜</button>
-          <button class="tab" data-view="admin" type="button">后台录入</button>
+          <button class="tab" data-view="admin" type="button">后台管理</button>
           <button id="adminLoginButton" class="ghost" type="button">管理员登录</button>
         </nav>
       </header>
@@ -65,7 +66,15 @@
           <span class="count-badge">星期一至星期五</span>
         </div>
         <form id="weeklyMenuForm">
-          <div id="weekGrid" class="week-grid"></div>
+          <div class="meal-switcher" role="tablist" aria-label="选择餐次">
+            <button class="meal-tab active" data-weekly-meal="breakfast" type="button">早餐</button>
+            <button class="meal-tab" data-weekly-meal="lunch" type="button">午餐</button>
+            <button class="meal-tab" data-weekly-meal="dinner" type="button">晚餐</button>
+          </div>
+          <div id="weeklyMealLabel" class="weekly-meal-label">当前编辑：早餐</div>
+          <div class="weekly-table-wrap">
+            <table id="weeklyTable" class="weekly-table"></table>
+          </div>
           <div class="form-actions">
             <button class="primary" type="submit">保存一周菜单</button>
             <span id="weeklyMessage" class="message"></span>
@@ -79,10 +88,58 @@
             <p class="eyebrow">DISH VOTE</p>
             <h2>菜品投票</h2>
           </div>
-          <span id="voteCount" class="count-badge">0 个菜品</span>
+          <div class="section-badges">
+            <span id="voteCount" class="count-badge">0 个菜品</span>
+            <span id="voteQuota" class="count-badge quota-badge">今日剩余 15 票</span>
+          </div>
         </div>
         <div id="voteMessage" class="message"></div>
         <div id="voteGrid" class="vote-grid"></div>
+      </section>
+
+      <section id="surveyView" class="content hidden">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CANTEEN SURVEY</p>
+            <h2>意见调查</h2>
+          </div>
+          <span class="count-badge">每项调查可提交一次</span>
+        </div>
+        <div id="surveyMessage" class="message"></div>
+        <div class="survey-grid">
+          <section class="survey-panel">
+            <div class="survey-heading">
+              <div>
+                <h3>你对食堂整体有什么评价？</h3>
+                <p>请选择最符合你感受的一项，也可以补充建议。</p>
+              </div>
+            </div>
+            <form id="cafeteriaSurveyForm" class="survey-form">
+              <div id="cafeteriaOptions" class="survey-options"></div>
+              <label>补充意见（可选）
+                <textarea id="cafeteriaComment" rows="3" maxlength="500" placeholder="例如：希望增加哪些菜品或改进哪些服务？"></textarea>
+              </label>
+              <button class="primary" type="submit">提交食堂评价</button>
+            </form>
+            <div id="cafeteriaSurveyMessage" class="message"></div>
+            <div id="cafeteriaResults" class="survey-results"></div>
+          </section>
+
+          <section class="survey-panel">
+            <div class="survey-heading">
+              <div>
+                <h3>荷特宝 VS 七立方</h3>
+                <p>你更喜欢哪一家？</p>
+              </div>
+            </div>
+            <form id="canteenChoiceForm" class="survey-form">
+              <div id="canteenChoiceOptions" class="survey-options"></div>
+              <button class="primary" type="submit">提交选择</button>
+            </form>
+            <div id="canteenChoiceMessage" class="message"></div>
+            <div id="canteenChoiceResults" class="survey-results"></div>
+          </section>
+        </div>
       </section>
 
       <section id="rankView" class="content hidden">
@@ -106,7 +163,7 @@
           <span id="adminCount" class="count-badge">0 条记录</span>
         </div>
         <div class="admin-status">
-          <span id="adminStatusText">当前为公开维护模式，管理员账号可登录确认：admin / admin</span>
+          <span id="adminStatusText">开放维护模式：可以录入菜品、模糊搜索和单个删除；登录管理员后可批量上传和一键清空。</span>
           <button id="adminLogoutButton" class="secondary hidden" type="button">退出管理员</button>
         </div>
         <div class="admin-toolbar">
@@ -115,6 +172,7 @@
             <button class="primary" type="submit">搜索</button>
             <button id="clearAdminSearch" class="secondary" type="button">显示全部</button>
           </form>
+          <button id="deleteAllDishes" class="danger hidden" data-admin-only type="button">一键删除全部菜品</button>
         </div>
         <div id="adminMessage" class="message"></div>
         <div id="adminGrid" class="result-grid admin-grid"></div>
@@ -131,6 +189,26 @@
           <div id="imagePreview" class="preview empty">选择图片后预览</div>
           <button class="primary" type="submit">保存菜品</button>
         </form>
+
+        <div id="bulkImportSection" class="admin-only hidden" data-admin-only>
+          <div class="section-heading sub-heading">
+            <div>
+              <p class="eyebrow">BULK IMPORT</p>
+              <h2>批量上传菜品</h2>
+            </div>
+          </div>
+          <form id="bulkDishForm" class="upload-form bulk-upload-form">
+            <label>菜名
+              <textarea id="bulkDishNames" rows="3" placeholder="按图片顺序输入菜名，用空格或换行分隔，例如：红烧肉 宫保鸡丁 番茄炒蛋"></textarea>
+            </label>
+            <label>按顺序选择图片
+              <input id="bulkDishImages" type="file" accept="image/jpeg,image/png,image/webp" multiple />
+            </label>
+            <div id="bulkUploadPreview" class="bulk-upload-preview">等待选择图片。</div>
+            <button class="primary" type="submit">按顺序批量上传</button>
+            <div id="bulkUploadMessage" class="message"></div>
+          </form>
+        </div>
       </section>
     </main>
 

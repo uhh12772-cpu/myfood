@@ -8,13 +8,18 @@ const CONFIG = {
 };
 
 const ADMIN_STATE_KEY = "dish-menu-supabase-admin-v1";
+const VISITOR_KEY = "dish-menu-visitor-key-v1";
+const SURVEY_CHOICE_KEY = "dish-menu-survey-choice-v1";
 const DISH_COLUMNS = "id,name,image_url,image_path,mime_type,vote_count,created_at,updated_at";
 const COMMENT_COLUMNS = "id,dish_id,content,like_count,created_at,updated_at";
 const DISH_CACHE_MS = 12000;
+const DAILY_VOTE_LIMIT = 15;
+const WEEKLY_COLUMNS = 8;
 
 const menuView = document.querySelector("#menuView");
 const weekView = document.querySelector("#weekView");
 const voteView = document.querySelector("#voteView");
+const surveyView = document.querySelector("#surveyView");
 const rankView = document.querySelector("#rankView");
 const adminView = document.querySelector("#adminView");
 const resultGrid = document.querySelector("#resultGrid");
@@ -22,11 +27,16 @@ const recognitionGrid = document.querySelector("#recognitionGrid");
 const adminGrid = document.querySelector("#adminGrid");
 const voteGrid = document.querySelector("#voteGrid");
 const rankList = document.querySelector("#rankList");
+const weeklyTable = document.querySelector("#weeklyTable");
 const searchMessage = document.querySelector("#searchMessage");
 const recognitionMessage = document.querySelector("#recognitionMessage");
 const adminMessage = document.querySelector("#adminMessage");
 const weeklyMessage = document.querySelector("#weeklyMessage");
 const voteMessage = document.querySelector("#voteMessage");
+const voteQuota = document.querySelector("#voteQuota");
+const surveyMessage = document.querySelector("#surveyMessage");
+const cafeteriaSurveyMessage = document.querySelector("#cafeteriaSurveyMessage");
+const canteenChoiceMessage = document.querySelector("#canteenChoiceMessage");
 const rankMessage = document.querySelector("#rankMessage");
 const imagePreview = document.querySelector("#imagePreview");
 const commentModal = document.querySelector("#commentModal");
@@ -44,7 +54,10 @@ let selectedDishFile = null;
 let selectedDishBlob = null;
 let selectedDishMimeType = "image/jpeg";
 let selectedRecognitionFile = null;
+let bulkDishFiles = [];
 let weeklyMenu = {};
+let weeklyActiveMeal = "breakfast";
+let voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
 let adminSearchTimer = null;
 let activeCommentDish = null;
 let currentView = "menu";
@@ -62,6 +75,30 @@ const meals = [
   { id: "lunch", label: "午餐" },
   { id: "dinner", label: "晚餐" }
 ];
+
+const surveys = {
+  cafeteria_rating: {
+    optionsTarget: "#cafeteriaOptions",
+    resultsTarget: "#cafeteriaResults",
+    storageKey: "cafeteria_rating",
+    options: [
+      { key: "very_good", label: "很满意" },
+      { key: "good", label: "比较满意" },
+      { key: "normal", label: "一般" },
+      { key: "bad", label: "不太满意" },
+      { key: "very_bad", label: "不满意" }
+    ]
+  },
+  canteen_choice: {
+    optionsTarget: "#canteenChoiceOptions",
+    resultsTarget: "#canteenChoiceResults",
+    storageKey: "canteen_choice",
+    options: [
+      { key: "hotbao", label: "荷特宝" },
+      { key: "qilifang", label: "七立方" }
+    ]
+  }
+};
 
 const menuNameLexicon = [
   "蒜泥白肉", "猪肉炖粉条", "宫保鸡丁", "红烧鸭块", "番茄牛腩", "蒸广东腊肠", "雪菜蒸小黄鱼", "酸菜鱼",
@@ -130,13 +167,16 @@ function updateAdminState() {
   const adminLoginButton = document.querySelector("#adminLoginButton");
   const adminLogoutButton = document.querySelector("#adminLogoutButton");
   const adminStatusText = document.querySelector("#adminStatusText");
+  document.querySelectorAll("[data-admin-only]").forEach((element) => {
+    element.classList.toggle("hidden", !isAdmin());
+  });
   if (isAdmin()) {
     adminLoginButton.textContent = "管理员已登录";
-    adminStatusText.textContent = "管理员模式已开启，当前页面仍按公开维护规则连接 Supabase。";
+    adminStatusText.textContent = "管理员模式已开启，可单个删除、批量上传和一键清空菜品。";
     adminLogoutButton.classList.remove("hidden");
   } else {
     adminLoginButton.textContent = "管理员登录";
-    adminStatusText.textContent = "当前为公开维护模式，管理员账号可登录确认：admin / admin";
+    adminStatusText.textContent = "开放维护模式：可以录入菜品、模糊搜索和单个删除；登录管理员后可批量上传和一键清空。";
     adminLogoutButton.classList.add("hidden");
   }
 }
@@ -144,6 +184,37 @@ function updateAdminState() {
 function createId(prefix = "item") {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getVisitorKey() {
+  let key = localStorage.getItem(VISITOR_KEY);
+  if (!key) {
+    key = createId("visitor");
+    localStorage.setItem(VISITOR_KEY, key);
+  }
+  return key;
+}
+
+function readSurveyChoices() {
+  try {
+    return JSON.parse(localStorage.getItem(SURVEY_CHOICE_KEY) || "{}");
+  } catch {
+    localStorage.removeItem(SURVEY_CHOICE_KEY);
+    return {};
+  }
+}
+
+function rememberSurveyChoice(surveyKey, optionKey) {
+  const choices = readSurveyChoices();
+  choices[surveyKey] = optionKey;
+  localStorage.setItem(SURVEY_CHOICE_KEY, JSON.stringify(choices));
+}
+
+function openAdminModal() {
+  adminLoginMessage.textContent = "";
+  document.querySelector("#adminLoginForm").reset();
+  adminModal.classList.remove("hidden");
+  document.querySelector("#adminUsername").focus();
 }
 
 function encodeStoragePath(path) {
@@ -185,6 +256,9 @@ function friendlyError(error) {
   const message = String(error?.message || error || "");
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
+  }
+  if (/get_vote_status|submit_survey|get_survey_results|function .* does not exist|Could not find the function/i.test(message)) {
+    return "Supabase 新功能表和函数还没创建，请先执行 new/supabase-feature-update.sql。";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
     return "连接 Supabase 失败，请检查网络、Project URL、anon key 和 Supabase 项目状态。";
@@ -508,12 +582,43 @@ async function loadAdminDishes(name = "") {
   }
 }
 
+function normalizeVoteStatus(payload) {
+  const row = Array.isArray(payload) ? payload[0] : payload;
+  const ids = Array.isArray(row?.voted_dish_ids) ? row.voted_dish_ids : [];
+  return {
+    usedVotes: Number(row?.used_votes || 0),
+    remainingVotes: Number(row?.remaining_votes ?? DAILY_VOTE_LIMIT),
+    votedDishIds: new Set(ids.filter(Boolean))
+  };
+}
+
+function updateVoteQuota() {
+  voteQuota.textContent = `今日剩余 ${Math.max(0, voteStatus.remainingVotes)} 票`;
+}
+
+async function loadVoteStatus() {
+  try {
+    const payload = await supabaseFetch("rpc/get_vote_status", {
+      method: "POST",
+      body: JSON.stringify({ p_voter_key: getVisitorKey() })
+    });
+    voteStatus = normalizeVoteStatus(payload);
+  } catch {
+    voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
+  }
+  updateVoteQuota();
+  return voteStatus;
+}
+
 async function loadVoteDishes() {
   voteMessage.textContent = "正在加载菜品...";
   try {
+    await loadVoteStatus();
     const dishes = await attachTopComments(await fetchDishes(""));
     renderVoteCards(dishes);
-    voteMessage.textContent = dishes.length ? "" : "还没有菜品，请先在后台录入。";
+    voteMessage.textContent = dishes.length
+      ? `今天已用 ${voteStatus.usedVotes} 票，每天最多 ${DAILY_VOTE_LIMIT} 票。`
+      : "还没有菜品，请先在后台录入。";
   } catch (error) {
     voteGrid.innerHTML = "";
     voteMessage.textContent = friendlyError(error);
@@ -523,7 +628,10 @@ async function loadVoteDishes() {
 function renderVoteCards(dishes) {
   document.querySelector("#voteCount").textContent = `${dishes.length} 个菜品`;
   voteGrid.innerHTML = dishes.length
-    ? dishes.map((dish) => `
+    ? dishes.map((dish) => {
+      const voted = voteStatus.votedDishIds.has(dish.id);
+      const noQuota = voteStatus.remainingVotes <= 0 && !voted;
+      return `
       <article class="vote-card">
         <div class="vote-media">
           ${renderDishImage(dish)}
@@ -532,12 +640,13 @@ function renderVoteCards(dishes) {
         <div class="vote-body">
           <h3>${escapeHtml(dish.name)}</h3>
           <div class="vote-actions">
-            <button class="primary vote-button" type="button" data-id="${escapeHtml(dish.id)}">投票</button>
+            <button class="primary vote-button" type="button" data-id="${escapeHtml(dish.id)}" ${voted || noQuota ? "disabled" : ""}>${voted ? "今天已投" : "投票"}</button>
             <button class="secondary comment-button" type="button" data-id="${escapeHtml(dish.id)}" data-name="${escapeHtml(dish.name)}">评论</button>
           </div>
           <p>累计投票数：<strong data-vote-total="${escapeHtml(dish.id)}">${Number(dish.voteCount || 0)}</strong></p>
         </div>
-      </article>`).join("")
+      </article>`;
+    }).join("")
     : `<div class="empty-state">还没有菜品，请先在后台录入。</div>`;
 
   voteGrid.querySelectorAll(".vote-button").forEach((button) => {
@@ -547,7 +656,19 @@ function renderVoteCards(dishes) {
         const row = await voteDish(button.dataset.id);
         const total = document.querySelector(`[data-vote-total="${CSS.escape(row.id)}"]`);
         if (total) total.textContent = Number(row.voteCount || 0);
-        voteMessage.textContent = `已为「${row.name}」投票。`;
+        if (row.alreadyVoted) {
+          voteStatus.votedDishIds.add(row.id);
+          voteMessage.textContent = `你今天已经给「${row.name}」投过票了。`;
+        } else if (row.limitReached) {
+          voteMessage.textContent = `今天 15 票已经用完，明天再来投。`;
+        } else {
+          voteStatus.votedDishIds.add(row.id);
+          voteMessage.textContent = `已为「${row.name}」投票。今天还剩 ${row.remainingVotes} 票。`;
+        }
+        voteStatus.usedVotes = row.usedVotes;
+        voteStatus.remainingVotes = row.remainingVotes;
+        updateVoteQuota();
+        renderVoteCards(await attachTopComments(await fetchDishes("")));
       } catch (error) {
         voteMessage.textContent = friendlyError(error);
       } finally {
@@ -564,7 +685,7 @@ function renderVoteCards(dishes) {
 async function voteDish(id) {
   const rows = await supabaseFetch("rpc/vote_dish", {
     method: "POST",
-    body: JSON.stringify({ p_dish_id: id })
+    body: JSON.stringify({ p_dish_id: id, p_voter_key: getVisitorKey() })
   });
   const row = Array.isArray(rows) ? rows[0] : rows;
   if (!row) throw new Error("投票失败，请重试。");
@@ -573,7 +694,11 @@ async function voteDish(id) {
   return {
     id: row.id,
     name: row.name || dish?.name || "",
-    voteCount: Number(row.vote_count || row.voteCount || 0)
+    voteCount: Number(row.vote_count || row.voteCount || 0),
+    usedVotes: Number(row.used_votes || 0),
+    remainingVotes: Number(row.remaining_votes ?? 0),
+    alreadyVoted: Boolean(row.already_voted),
+    limitReached: Boolean(row.limit_reached)
   };
 }
 
@@ -654,6 +779,85 @@ async function closeCommentModal() {
   if (currentView === "vote") loadVoteDishes();
 }
 
+function renderSurveyOptions() {
+  const choices = readSurveyChoices();
+  for (const [surveyKey, survey] of Object.entries(surveys)) {
+    const target = document.querySelector(survey.optionsTarget);
+    if (!target) continue;
+    target.innerHTML = survey.options.map((option) => `
+      <label class="survey-option">
+        <input type="radio" name="${escapeHtml(surveyKey)}" value="${escapeHtml(option.key)}" ${choices[surveyKey] === option.key ? "checked" : ""} />
+        <span>${escapeHtml(option.label)}</span>
+      </label>`).join("");
+  }
+}
+
+function selectedSurveyOption(surveyKey) {
+  return document.querySelector(`input[name="${surveyKey}"]:checked`)?.value || "";
+}
+
+function renderSurveyResults(surveyKey, rows) {
+  const survey = surveys[surveyKey];
+  const target = document.querySelector(survey.resultsTarget);
+  if (!target) return;
+  const counts = new Map((Array.isArray(rows) ? rows : []).map((row) => [row.option_key, Number(row.response_count || 0)]));
+  const total = Number((Array.isArray(rows) ? rows[0]?.total_count : 0) || [...counts.values()].reduce((sum, count) => sum + count, 0));
+  target.innerHTML = survey.options.map((option) => {
+    const count = counts.get(option.key) || 0;
+    const percent = total ? Math.round((count / total) * 100) : 0;
+    return `
+      <div class="survey-result-row">
+        <div class="survey-result-text">
+          <strong>${escapeHtml(option.label)}</strong>
+          <span>${count} 票 · ${percent}%</span>
+        </div>
+        <div class="survey-bar"><span style="width: ${percent}%"></span></div>
+      </div>`;
+  }).join("");
+}
+
+async function loadSurveyResults(surveyKey) {
+  const rows = await supabaseFetch("rpc/get_survey_results", {
+    method: "POST",
+    body: JSON.stringify({ p_survey_key: surveyKey })
+  });
+  renderSurveyResults(surveyKey, rows);
+}
+
+async function submitSurvey(surveyKey, optionKey, comment, messageTarget) {
+  if (!optionKey) {
+    messageTarget.textContent = "请先选择一个选项。";
+    return;
+  }
+  messageTarget.textContent = "正在提交...";
+  await supabaseFetch("rpc/submit_survey", {
+    method: "POST",
+    body: JSON.stringify({
+      p_survey_key: surveyKey,
+      p_option_key: optionKey,
+      p_comment: comment || "",
+      p_voter_key: getVisitorKey()
+    })
+  });
+  rememberSurveyChoice(surveyKey, optionKey);
+  messageTarget.textContent = "已提交，重新提交会覆盖你之前的选择。";
+  await loadSurveyResults(surveyKey);
+}
+
+async function loadSurveyPage() {
+  renderSurveyOptions();
+  surveyMessage.textContent = "正在加载调查结果...";
+  try {
+    await Promise.all([
+      loadSurveyResults("cafeteria_rating"),
+      loadSurveyResults("canteen_choice")
+    ]);
+    surveyMessage.textContent = "调查结果已更新。";
+  } catch (error) {
+    surveyMessage.textContent = friendlyError(error);
+  }
+}
+
 async function loadRankingDishes() {
   rankMessage.textContent = "正在加载排行榜...";
   try {
@@ -689,93 +893,74 @@ function renderRanking(dishes) {
     : `<div class="empty-state">还没有菜品，请先在后台录入。</div>`;
 }
 
+function ensureWeeklySlots(dayId, mealId) {
+  weeklyMenu[dayId] = weeklyMenu[dayId] || {};
+  const values = Array.isArray(weeklyMenu[dayId][mealId]) ? weeklyMenu[dayId][mealId] : [];
+  weeklyMenu[dayId][mealId] = Array.from({ length: WEEKLY_COLUMNS }, (_, index) => values[index] || "");
+  return weeklyMenu[dayId][mealId];
+}
+
 function createWeeklyForm() {
-  const grid = document.querySelector("#weekGrid");
-  grid.innerHTML = days.map((day) => `
-    <article class="day-card">
-      <div class="day-heading"><h3>${day.label}</h3><span>${day.id === "monday" ? "开始一周" : ""}</span></div>
-      ${meals.map((meal) => `
-        <div class="meal-slot">
-          <div class="meal-header">
-            <strong>${meal.label}</strong>
-            <button type="button" class="add-dish" data-day="${day.id}" data-meal="${meal.id}" aria-label="添加菜品">+</button>
-          </div>
-          <div class="dish-list" data-list="${day.id}-${meal.id}"></div>
-        </div>`).join("")}
-    </article>`).join("");
-
-  for (const day of days) {
-    for (const meal of meals) renderMealEntries(day.id, meal.id);
-  }
-  document.querySelectorAll(".add-dish").forEach((button) => {
-    button.addEventListener("click", () => {
-      weeklyMenu[button.dataset.day][button.dataset.meal].push("");
-      renderMealEntries(button.dataset.day, button.dataset.meal);
-    });
-  });
+  renderWeeklyTable();
 }
 
-function renderMealEntries(dayId, mealId) {
-  const list = document.querySelector(`[data-list="${dayId}-${mealId}"]`);
-  const values = weeklyMenu?.[dayId]?.[mealId] || [""];
-  if (!values.length) values.push("");
-  list.innerHTML = values.map((value, index) => `
-    <div class="dish-entry">
-      <div class="entry-input-row">
-        <input class="weekly-input" data-day="${dayId}" data-meal="${mealId}" data-index="${index}" value="${escapeHtml(value)}" placeholder="输入菜名" autocomplete="off" />
-        <button type="button" class="remove-dish" data-day="${dayId}" data-meal="${mealId}" data-index="${index}" aria-label="删除菜品">&times;</button>
-      </div>
-      <div class="dish-preview" data-preview="${dayId}-${mealId}-${index}"><span>输入后显示图片</span></div>
-      <div class="suggestions" data-suggestions="${dayId}-${mealId}-${index}"></div>
-    </div>`).join("");
+function setWeeklyMeal(mealId) {
+  weeklyActiveMeal = mealId;
+  document.querySelectorAll(".meal-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.weeklyMeal === mealId);
+  });
+  renderWeeklyTable();
+}
 
-  list.querySelectorAll(".weekly-input").forEach((input) => {
+function renderWeeklyTable() {
+  const meal = meals.find((item) => item.id === weeklyActiveMeal) || meals[0];
+  document.querySelector("#weeklyMealLabel").textContent = `当前编辑：${meal.label}`;
+  weeklyTable.innerHTML = `
+    <thead>
+      <tr>
+        <th>星期</th>
+        ${Array.from({ length: WEEKLY_COLUMNS }, (_, index) => `<th>菜品${index + 1}</th>`).join("")}
+      </tr>
+    </thead>
+    <tbody>
+      ${days.map((day) => {
+        const values = ensureWeeklySlots(day.id, meal.id);
+        return `
+          <tr>
+            <th>${day.label}</th>
+            ${values.map((value, index) => `
+              <td>
+                <input class="weekly-cell" data-day="${day.id}" data-meal="${meal.id}" data-index="${index}" value="${escapeHtml(value)}" placeholder="菜名" autocomplete="off" />
+              </td>`).join("")}
+          </tr>`;
+      }).join("")}
+    </tbody>`;
+
+  weeklyTable.querySelectorAll(".weekly-cell").forEach((input) => {
     input.addEventListener("input", () => {
-      weeklyMenu[dayId][mealId][Number(input.dataset.index)] = input.value;
-      lookupWeeklyDish(input.value.trim(), dayId, mealId, Number(input.dataset.index));
+      ensureWeeklySlots(input.dataset.day, input.dataset.meal)[Number(input.dataset.index)] = input.value;
     });
-  });
-  list.querySelectorAll(".remove-dish").forEach((button) => {
-    button.addEventListener("click", () => {
-      weeklyMenu[dayId][mealId].splice(Number(button.dataset.index), 1);
-      renderMealEntries(dayId, mealId);
-    });
-  });
-  values.forEach((value, index) => {
-    if (value) lookupWeeklyDish(value, dayId, mealId, index);
+    input.addEventListener("paste", (event) => handleWeeklyPaste(event, input));
   });
 }
 
-async function lookupWeeklyDish(name, dayId, mealId, index) {
-  const key = `${dayId}-${mealId}-${index}`;
-  const preview = document.querySelector(`[data-preview="${key}"]`);
-  const suggestions = document.querySelector(`[data-suggestions="${key}"]`);
-  if (!preview || !suggestions) return;
-  if (!name) {
-    preview.innerHTML = "<span>输入后显示图片</span>";
-    suggestions.innerHTML = "";
-    return;
-  }
-  try {
-    const dishes = filterDishes(await loadAllDishes(), name);
-    const match = dishes[0];
-    preview.innerHTML = match
-      ? `${renderDishImage(match)}<strong>${escapeHtml(match.name)}</strong>`
-      : "<span>暂无匹配图片</span>";
-    suggestions.innerHTML = dishes.slice(0, 4).map((dish) => `
-      <button type="button" class="suggestion" data-name="${escapeHtml(dish.name)}">${escapeHtml(dish.name)}</button>`).join("");
-    suggestions.querySelectorAll(".suggestion").forEach((button) => {
-      button.addEventListener("click", () => {
-        const input = document.querySelector(`.weekly-input[data-day="${dayId}"][data-meal="${mealId}"][data-index="${index}"]`);
-        if (!input) return;
-        input.value = button.dataset.name;
-        weeklyMenu[dayId][mealId][index] = button.dataset.name;
-        lookupWeeklyDish(button.dataset.name, dayId, mealId, index);
-      });
+function handleWeeklyPaste(event, input) {
+  const pasted = event.clipboardData?.getData("text") || "";
+  if (!pasted.includes("\t") && !pasted.includes("\n")) return;
+  event.preventDefault();
+  const rows = pasted.trim().split(/\r?\n/).map((row) => row.split("\t"));
+  const startDayIndex = days.findIndex((day) => day.id === input.dataset.day);
+  const startColumn = Number(input.dataset.index);
+  rows.forEach((row, rowOffset) => {
+    const day = days[startDayIndex + rowOffset];
+    if (!day) return;
+    row.forEach((value, columnOffset) => {
+      const column = startColumn + columnOffset;
+      if (column >= WEEKLY_COLUMNS) return;
+      ensureWeeklySlots(day.id, weeklyActiveMeal)[column] = value.trim();
     });
-  } catch {
-    preview.innerHTML = "<span>图片加载失败</span>";
-  }
+  });
+  renderWeeklyTable();
 }
 
 function normalizeWeeklyMenu(input) {
@@ -783,9 +968,8 @@ function normalizeWeeklyMenu(input) {
   for (const day of days) {
     for (const meal of meals) {
       const value = input?.[day.id]?.[meal.id];
-      const items = Array.isArray(value) ? value : (value ? [value] : [""]);
-      result[day.id][meal.id] = items.map((name) => String(name || "").trim()).filter(Boolean).slice(0, 10);
-      if (!result[day.id][meal.id].length) result[day.id][meal.id] = [""];
+      const items = Array.isArray(value) ? value : (value ? [value] : []);
+      result[day.id][meal.id] = Array.from({ length: WEEKLY_COLUMNS }, (_, index) => String(items[index] || "").trim());
     }
   }
   return result;
@@ -794,7 +978,6 @@ function normalizeWeeklyMenu(input) {
 async function loadWeeklyMenu() {
   weeklyMessage.textContent = "正在加载一周菜单...";
   try {
-    await loadAllDishes();
     const rows = await supabaseFetch("weekly_menu_items?select=id,weekday,meal_type,dish_id,dish_name,sort_order&order=weekday.asc,meal_type.asc,sort_order.asc&limit=1000");
     const loaded = createEmptyWeeklyMenu();
     for (const day of days) {
@@ -803,13 +986,13 @@ async function loadWeeklyMenu() {
     for (const row of Array.isArray(rows) ? rows : []) {
       const day = days.find((item) => item.value === Number(row.weekday));
       const meal = meals.find((item) => item.id === row.meal_type);
-      if (day && meal && row.dish_name) loaded[day.id][meal.id].push(row.dish_name);
+      if (day && meal && row.dish_name) loaded[day.id][meal.id][Number(row.sort_order || 0)] = row.dish_name;
     }
     weeklyMenu = normalizeWeeklyMenu(loaded);
     createWeeklyForm();
     weeklyMessage.textContent = "一周菜单已加载。";
   } catch (error) {
-    weeklyMenu = createEmptyWeeklyMenu();
+    weeklyMenu = normalizeWeeklyMenu({});
     createWeeklyForm();
     weeklyMessage.textContent = friendlyError(error);
   }
@@ -820,22 +1003,24 @@ async function saveWeeklyMenu() {
   submitButton.disabled = true;
   weeklyMessage.textContent = "正在保存...";
   try {
+    await loadAllDishes();
     const normalized = normalizeWeeklyMenu(weeklyMenu);
     const rows = [];
     for (const day of days) {
       for (const meal of meals) {
-        normalized[day.id][meal.id].forEach((name, index) => {
-          const cleanName = String(name || "").trim();
-          if (!cleanName) return;
-          const matchedDish = findDishForName(cleanName);
-          rows.push({
-            weekday: day.value,
-            meal_type: meal.id,
-            dish_id: matchedDish?.id || null,
-            dish_name: cleanName.slice(0, 120),
-            sort_order: index
+        normalized[day.id][meal.id]
+          .map((name) => String(name || "").trim())
+          .filter(Boolean)
+          .forEach((name, index) => {
+            const matchedDish = findDishForName(name);
+            rows.push({
+              weekday: day.value,
+              meal_type: meal.id,
+              dish_id: matchedDish?.id || null,
+              dish_name: name.slice(0, 120),
+              sort_order: index
+            });
           });
-        });
       }
     }
     await supabaseFetch("weekly_menu_items?weekday=gte.1", {
@@ -850,12 +1035,35 @@ async function saveWeeklyMenu() {
       });
     }
     weeklyMenu = normalized;
+    renderWeeklyTable();
     weeklyMessage.textContent = "一周菜单已保存到 Supabase。";
   } catch (error) {
     weeklyMessage.textContent = friendlyError(error);
   } finally {
     submitButton.disabled = false;
   }
+}
+
+async function removeWeeklyMenuForDish(dish) {
+  if (!dish?.id) return;
+  const requestOptions = {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  };
+  await supabaseFetch(`weekly_menu_items?dish_id=eq.${encodeURIComponent(dish.id)}`, requestOptions);
+  if (dish.name) {
+    await supabaseFetch(
+      `weekly_menu_items?dish_id=is.null&dish_name=eq.${encodeURIComponent(dish.name)}`,
+      requestOptions
+    );
+  }
+}
+
+async function removeAllWeeklyMenuItems() {
+  await supabaseFetch("weekly_menu_items?weekday=gte.1", {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  });
 }
 
 function extensionForType(mimeType) {
@@ -926,6 +1134,27 @@ async function removeDishImage(imagePath) {
   });
 }
 
+async function saveDishRecord(name, blob, mimeType) {
+  const uploaded = await uploadDishImage(blob, mimeType);
+  try {
+    const rows = await supabaseFetch("dishes", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        name: name.slice(0, 120),
+        image_url: uploaded.imageUrl,
+        image_path: uploaded.imagePath,
+        mime_type: mimeType,
+        vote_count: 0
+      })
+    });
+    return Array.isArray(rows) ? rows.map(normalizeDish) : [];
+  } catch (error) {
+    try { await removeDishImage(uploaded.imagePath); } catch {}
+    throw error;
+  }
+}
+
 async function createDish(event) {
   event.preventDefault();
   const submitButton = document.querySelector("#dishForm button[type='submit']");
@@ -936,22 +1165,8 @@ async function createDish(event) {
   }
   submitButton.disabled = true;
   adminMessage.textContent = "正在上传图片...";
-  let uploaded = null;
   try {
-    uploaded = await uploadDishImage(selectedDishBlob, selectedDishMimeType);
-    adminMessage.textContent = "图片已上传，正在保存菜品...";
-    const rows = await supabaseFetch("dishes", {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({
-        name,
-        image_url: uploaded.imageUrl,
-        image_path: uploaded.imagePath,
-        mime_type: selectedDishMimeType,
-        vote_count: 0
-      })
-    });
-    const created = Array.isArray(rows) ? rows.map(normalizeDish) : [];
+    const created = await saveDishRecord(name, selectedDishBlob, selectedDishMimeType);
     allDishes = [...created, ...allDishes];
     dishCacheTime = Date.now();
     adminMessage.textContent = "保存成功。";
@@ -965,9 +1180,6 @@ async function createDish(event) {
     await loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
     adminMessage.textContent = "保存成功。";
   } catch (error) {
-    if (uploaded?.imagePath) {
-      try { await removeDishImage(uploaded.imagePath); } catch {}
-    }
     adminMessage.textContent = friendlyError(error);
   } finally {
     submitButton.disabled = false;
@@ -981,6 +1193,7 @@ async function deleteDish(id, button) {
   button.disabled = true;
   adminMessage.textContent = "正在删除菜品...";
   try {
+    await removeWeeklyMenuForDish(dish);
     await supabaseFetch(`dishes?id=eq.${encodeURIComponent(id)}`, {
       method: "DELETE",
       headers: { Prefer: "return=minimal" }
@@ -989,12 +1202,128 @@ async function deleteDish(id, button) {
       try { await removeDishImage(dish.imagePath); } catch {}
     }
     await loadAllDishes(true);
-    loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
-    if (currentView === "vote") loadVoteDishes();
-    if (currentView === "rank") loadRankingDishes();
+    await loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
+    if (currentView === "vote") await loadVoteDishes();
+    if (currentView === "rank") await loadRankingDishes();
+    if (currentView === "week") await loadWeeklyMenu();
     adminMessage.textContent = "菜品已删除。";
   } catch (error) {
     adminMessage.textContent = friendlyError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteAllDishes() {
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
+  const button = document.querySelector("#deleteAllDishes");
+  const dishes = await loadAllDishes(true);
+  if (!dishes.length) {
+    adminMessage.textContent = "当前没有菜品可删除。";
+    return;
+  }
+  if (!window.confirm(`确认删除全部 ${dishes.length} 个菜品吗？这个操作会同时清空相关投票和评论。`)) return;
+  button.disabled = true;
+  adminMessage.textContent = "正在一键删除全部菜品...";
+  try {
+    await removeAllWeeklyMenuItems();
+    await supabaseFetch("dishes?id=not.is.null", {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" }
+    });
+    for (const dish of dishes) {
+      if (dish.imagePath) {
+        try { await removeDishImage(dish.imagePath); } catch {}
+      }
+    }
+    allDishes = [];
+    dishCacheTime = Date.now();
+    weeklyMenu = createEmptyWeeklyMenu();
+    createWeeklyForm();
+    voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
+    updateVoteQuota();
+    await loadAdminDishes();
+    resultGrid.innerHTML = "";
+    voteGrid.innerHTML = "";
+    rankList.innerHTML = "";
+    document.querySelector("#voteCount").textContent = "0 个菜品";
+    document.querySelector("#rankCount").textContent = "0 个菜品";
+    adminMessage.textContent = "全部菜品已删除。";
+  } catch (error) {
+    adminMessage.textContent = friendlyError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function parseBulkDishNames(value) {
+  return String(value || "")
+    .split(/[\s,，、;；]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => name.slice(0, 120));
+}
+
+function renderBulkUploadPreview() {
+  const names = parseBulkDishNames(document.querySelector("#bulkDishNames").value);
+  const target = document.querySelector("#bulkUploadPreview");
+  const countText = `已识别 ${names.length} 个菜名，已选择 ${bulkDishFiles.length} 张图片。`;
+  const pairs = names.slice(0, 12).map((name, index) => {
+    const file = bulkDishFiles[index];
+    return `<span>${index + 1}. ${escapeHtml(name)}${file ? ` → ${escapeHtml(file.name)}` : " → 等待图片"}</span>`;
+  }).join("");
+  target.innerHTML = `<strong>${countText}</strong>${pairs ? `<div>${pairs}</div>` : ""}`;
+}
+
+async function uploadBulkDishes(event) {
+  event.preventDefault();
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
+  const button = document.querySelector("#bulkDishForm button[type='submit']");
+  const message = document.querySelector("#bulkUploadMessage");
+  const names = parseBulkDishNames(document.querySelector("#bulkDishNames").value);
+  if (!names.length || !bulkDishFiles.length) {
+    message.textContent = "请先输入菜名并选择图片。";
+    return;
+  }
+  if (names.length !== bulkDishFiles.length) {
+    message.textContent = `菜名数量和图片数量不一致：${names.length} 个菜名，${bulkDishFiles.length} 张图片。`;
+    return;
+  }
+  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+  if (duplicates.length) {
+    message.textContent = `菜名重复：${[...new Set(duplicates)].join("、")}`;
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "正在批量上传...";
+  const created = [];
+  try {
+    for (let index = 0; index < names.length; index += 1) {
+      const file = bulkDishFiles[index];
+      if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+        throw new Error(`第 ${index + 1} 张图片格式不支持。`);
+      }
+      message.textContent = `正在上传 ${index + 1}/${names.length}：${names[index]}`;
+      const compressed = await compressImageFile(file);
+      const rows = await saveDishRecord(names[index], compressed.blob, compressed.mimeType);
+      created.push(...rows);
+    }
+    allDishes = [...created, ...allDishes];
+    await loadAllDishes(true);
+    await loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
+    document.querySelector("#bulkDishForm").reset();
+    bulkDishFiles = [];
+    renderBulkUploadPreview();
+    message.textContent = `批量上传完成，共新增 ${created.length} 个菜品。`;
+  } catch (error) {
+    message.textContent = friendlyError(error);
   } finally {
     button.disabled = false;
   }
@@ -1005,6 +1334,7 @@ function showView(view) {
   menuView.classList.toggle("hidden", view !== "menu");
   weekView.classList.toggle("hidden", view !== "week");
   voteView.classList.toggle("hidden", view !== "vote");
+  surveyView.classList.toggle("hidden", view !== "survey");
   rankView.classList.toggle("hidden", view !== "rank");
   adminView.classList.toggle("hidden", view !== "admin");
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
@@ -1012,6 +1342,7 @@ function showView(view) {
   if (view === "admin") loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
   if (view === "week") loadWeeklyMenu();
   if (view === "vote") loadVoteDishes();
+  if (view === "survey") loadSurveyPage();
   if (view === "rank") loadRankingDishes();
 }
 
@@ -1058,6 +1389,8 @@ function bindEvents() {
     loadAdminDishes();
   });
 
+  document.querySelector("#deleteAllDishes").addEventListener("click", deleteAllDishes);
+
   document.querySelector("#dishImage").addEventListener("change", async (event) => {
     selectedDishFile = event.target.files[0] || null;
     selectedDishBlob = null;
@@ -1098,9 +1431,48 @@ function bindEvents() {
 
   document.querySelector("#dishForm").addEventListener("submit", createDish);
 
+  document.querySelector("#bulkDishNames").addEventListener("input", renderBulkUploadPreview);
+  document.querySelector("#bulkDishImages").addEventListener("change", (event) => {
+    bulkDishFiles = [...event.target.files];
+    renderBulkUploadPreview();
+  });
+  document.querySelector("#bulkDishForm").addEventListener("submit", uploadBulkDishes);
+
   document.querySelector("#weeklyMenuForm").addEventListener("submit", (event) => {
     event.preventDefault();
     saveWeeklyMenu();
+  });
+
+  document.querySelectorAll(".meal-tab").forEach((button) => {
+    button.addEventListener("click", () => setWeeklyMeal(button.dataset.weeklyMeal));
+  });
+
+  document.querySelector("#cafeteriaSurveyForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await submitSurvey(
+        "cafeteria_rating",
+        selectedSurveyOption("cafeteria_rating"),
+        document.querySelector("#cafeteriaComment").value.trim(),
+        cafeteriaSurveyMessage
+      );
+    } catch (error) {
+      cafeteriaSurveyMessage.textContent = friendlyError(error);
+    }
+  });
+
+  document.querySelector("#canteenChoiceForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await submitSurvey(
+        "canteen_choice",
+        selectedSurveyOption("canteen_choice"),
+        "",
+        canteenChoiceMessage
+      );
+    } catch (error) {
+      canteenChoiceMessage.textContent = friendlyError(error);
+    }
   });
 
   document.querySelector("#commentClose").addEventListener("click", closeCommentModal);
@@ -1113,10 +1485,7 @@ function bindEvents() {
       showView("admin");
       return;
     }
-    adminLoginMessage.textContent = "";
-    document.querySelector("#adminLoginForm").reset();
-    adminModal.classList.remove("hidden");
-    document.querySelector("#adminUsername").focus();
+    openAdminModal();
   });
 
   document.querySelector("#adminModalClose").addEventListener("click", () => adminModal.classList.add("hidden"));
@@ -1139,6 +1508,7 @@ function bindEvents() {
 
   document.querySelector("#adminLogoutButton").addEventListener("click", () => {
     setAdmin(false);
+    if (currentView === "admin") showView("menu");
   });
 
   document.addEventListener("keydown", (event) => {
@@ -1153,18 +1523,21 @@ async function init() {
   weeklyMenu = createEmptyWeeklyMenu();
   bindEvents();
   updateAdminState();
+  renderSurveyOptions();
+  renderBulkUploadPreview();
   createWeeklyForm();
   try {
     await loadAllDishes(true);
     searchMessage.textContent = allDishes.length
       ? `已连接 Supabase，共 ${allDishes.length} 个菜品。请输入菜名开始搜索。`
       : "已连接 Supabase，目前还没有菜品。";
-    await Promise.all([loadAdminDishes(), loadWeeklyMenu(), loadVoteDishes(), loadRankingDishes()]);
+    await Promise.all([loadWeeklyMenu(), loadVoteDishes(), loadRankingDishes()]);
   } catch (error) {
     searchMessage.textContent = friendlyError(error);
     adminMessage.textContent = friendlyError(error);
     weeklyMessage.textContent = friendlyError(error);
     voteMessage.textContent = friendlyError(error);
+    surveyMessage.textContent = friendlyError(error);
     rankMessage.textContent = friendlyError(error);
   }
 }
