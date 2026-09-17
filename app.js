@@ -1445,6 +1445,27 @@ async function removeAllWeeklyMenuItems() {
   });
 }
 
+async function clearWeeklyMenu() {
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
+  const button = document.querySelector("#clearWeeklyMenu");
+  if (!window.confirm("确认清空一周菜单吗？这只会删除周一至周五的早餐、午餐和晚餐安排，不会删除菜品库。")) return;
+  button.disabled = true;
+  weeklyMessage.textContent = "正在清空一周菜单...";
+  try {
+    await removeAllWeeklyMenuItems();
+    weeklyMenu = createEmptyWeeklyMenu();
+    renderWeeklyTable();
+    weeklyMessage.textContent = "一周菜单已清空。";
+  } catch (error) {
+    weeklyMessage.textContent = friendlyError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function extensionForType(mimeType) {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
@@ -1821,6 +1842,7 @@ function bindEvents() {
     event.preventDefault();
     saveWeeklyMenu();
   });
+  document.querySelector("#clearWeeklyMenu").addEventListener("click", clearWeeklyMenu);
 
   document.querySelector("#weeklyImportButton").addEventListener("click", () => {
     weeklyImportModal.classList.remove("hidden");
