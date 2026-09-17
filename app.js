@@ -14,7 +14,8 @@ const DISH_COLUMNS = "id,name,image_url,image_path,mime_type,vote_count,created_
 const COMMENT_COLUMNS = "id,dish_id,content,like_count,created_at,updated_at";
 const DISH_CACHE_MS = 12000;
 const DAILY_VOTE_LIMIT = 15;
-const WEEKLY_COLUMNS = 8;
+const WEEKLY_COLUMNS = 16;
+const WEEKLY_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
 
 const menuView = document.querySelector("#menuView");
 const weekView = document.querySelector("#weekView");
@@ -28,6 +29,11 @@ const adminGrid = document.querySelector("#adminGrid");
 const voteGrid = document.querySelector("#voteGrid");
 const rankList = document.querySelector("#rankList");
 const weeklyTable = document.querySelector("#weeklyTable");
+const weeklyImportModal = document.querySelector("#weeklyImportModal");
+const weeklyImportFile = document.querySelector("#weeklyImportFile");
+const weeklyImportMessage = document.querySelector("#weeklyImportMessage");
+const weeklyImportPreview = document.querySelector("#weeklyImportPreview");
+const weeklyImportApply = document.querySelector("#weeklyImportApply");
 const searchMessage = document.querySelector("#searchMessage");
 const recognitionMessage = document.querySelector("#recognitionMessage");
 const adminMessage = document.querySelector("#adminMessage");
@@ -57,6 +63,8 @@ let selectedRecognitionFile = null;
 let bulkDishFiles = [];
 let weeklyMenu = {};
 let weeklyActiveMeal = "breakfast";
+let weeklyImportResult = null;
+let weeklyImportBusy = false;
 let voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
 let adminSearchTimer = null;
 let activeCommentDish = null;
@@ -975,6 +983,377 @@ function normalizeWeeklyMenu(input) {
   return result;
 }
 
+function detectWeeklyDay(value) {
+  const text = String(value || "");
+  if (/(?:星期|周)\s*一/.test(text) || /\b(?:Mon|Monday)\b/i.test(text)) return "monday";
+  if (/(?:星期|周)\s*二/.test(text) || /\b(?:Tue|Tuesday)\b/i.test(text)) return "tuesday";
+  if (/(?:星期|周)\s*三/.test(text) || /\b(?:Wed|Wednesday)\b/i.test(text)) return "wednesday";
+  if (/(?:星期|周)\s*四/.test(text) || /\b(?:Thu|Thursday)\b/i.test(text)) return "thursday";
+  if (/(?:星期|周)\s*五/.test(text) || /\b(?:Fri|Friday)\b/i.test(text)) return "friday";
+  return "";
+}
+
+function detectWeeklyMeal(value) {
+  const text = String(value || "");
+  if (/早餐|早饭|早\s*餐|\bbreakfast\b/i.test(text)) return "breakfast";
+  if (/午餐|午饭|中餐|\blunch\b/i.test(text)) return "lunch";
+  if (/晚餐|晚饭|\bdinner\b/i.test(text)) return "dinner";
+  return "";
+}
+
+const weeklyImportNonDishWords = new Set([
+  ...nonDishWords,
+  "备注", "说明", "注意", "每日", "每天", "可能", "调整", "新鲜", "食材", "类别", "分类",
+  "主菜", "小菜", "时蔬", "蔬菜", "饮品", "点心", "米饭", "汤品", "水果饮料", "notes"
+]);
+
+function cleanWeeklyDishName(value) {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[A-Za-z][A-Za-z\s&'/-]*$/g, "")
+    .replace(/[0-9０-９]+/g, "")
+    .replace(/^(?:早餐|午餐|晚餐|早饭|午饭|晚饭|主食|汤品|菜品|类别|分类)\s*[:：-]?/u, "")
+    .replace(/^[\s:：,，、/／|]+|[\s:：,，、/／|]+$/g, "")
+    .replace(/[()（）【】[\]{}<>《》]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function isWeeklyDishName(value) {
+  const name = cleanWeeklyDishName(value);
+  if (name.length < 2 || name.length > 24) return false;
+  if (!/[\u3400-\u9fff]/.test(name)) return false;
+  if (weeklyImportNonDishWords.has(name)) return false;
+  if (/^(?:星期|周)[一二三四五六日天]/u.test(name)) return false;
+  if (/^(?:备注|说明|注意|每日|每天|可能|调整|食材新鲜)/u.test(name)) return false;
+  return true;
+}
+
+function extractWeeklyDishNames(value) {
+  const raw = String(value || "").replace(/\r/g, "").trim();
+  if (!raw) return [];
+  const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+  const names = [];
+
+  for (const line of lines) {
+    if (/^(?:备注|说明|注意|notes?)\b/i.test(line)) continue;
+    const known = extractKnownDishMatches(line).map((item) => item.name).filter(isWeeklyDishName);
+    if (known.length) {
+      names.push(...known);
+      continue;
+    }
+    const chineseLine = line.replace(/[A-Za-z][\s\S]*$/g, "");
+    const pieces = chineseLine.split(/[\/／、，,;；|]+/g);
+    for (const piece of pieces) {
+      const name = cleanWeeklyDishName(piece);
+      if (isWeeklyDishName(name)) names.push(name);
+    }
+  }
+
+  const seen = new Set();
+  return names.filter((name) => {
+    const key = normalizeForDishMatch(name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function createWeeklyImportResult(sourceType, fileName) {
+  return {
+    sourceType,
+    fileName,
+    menu: createEmptyWeeklyMenu(),
+    coveredSlots: [],
+    coveredSlotKeys: new Set(),
+    warnings: []
+  };
+}
+
+function addWeeklyImportSlot(result, dayId, mealId, names, markEmpty = false) {
+  if (!days.some((day) => day.id === dayId) || !meals.some((meal) => meal.id === mealId)) return;
+  const key = `${dayId}:${mealId}`;
+  const cleaned = names.filter(isWeeklyDishName).slice(0, WEEKLY_COLUMNS);
+  result.menu[dayId][mealId] = [...cleaned, ...Array(WEEKLY_COLUMNS - cleaned.length).fill("")];
+  if (markEmpty || cleaned.length) {
+    if (!result.coveredSlotKeys.has(key)) {
+      result.coveredSlotKeys.add(key);
+      result.coveredSlots.push({ dayId, mealId });
+    }
+  }
+}
+
+function countWeeklyImportDishes(result) {
+  return result.coveredSlots.reduce(
+    (total, slot) => total + result.menu[slot.dayId][slot.mealId].filter(Boolean).length,
+    0
+  );
+}
+
+function detectWeeklyDayColumns(rows) {
+  const columns = new Map();
+  let headerRow = Number.MAX_SAFE_INTEGER;
+  rows.forEach((row, rowIndex) => {
+    row.forEach((value, columnIndex) => {
+      const dayId = detectWeeklyDay(value);
+      if (!dayId || columns.has(dayId)) return;
+      columns.set(dayId, { columnIndex, rowIndex });
+      headerRow = Math.min(headerRow, rowIndex);
+    });
+  });
+  return { columns, headerRow: headerRow === Number.MAX_SAFE_INTEGER ? -1 : headerRow };
+}
+
+function parseWeeklyWorksheet(sheetName, rows, result) {
+  const dayInfo = detectWeeklyDayColumns(rows);
+  if (!dayInfo.columns.size) return false;
+
+  const sheetMeal = detectWeeklyMeal(sheetName);
+  const rowMeals = new Set();
+  rows.forEach((row) => {
+    const rowMeal = detectWeeklyMeal(row.slice(0, 3).join(" "));
+    if (rowMeal) rowMeals.add(rowMeal);
+  });
+  const fixedMeal = sheetMeal || (rowMeals.size === 1 ? [...rowMeals][0] : "");
+  let activeMeal = fixedMeal || "";
+  const buckets = Object.fromEntries(meals.map((meal) => [meal.id, Object.fromEntries(days.map((day) => [day.id, []]))]));
+  const startRow = Math.max(0, dayInfo.headerRow + 1);
+
+  for (let rowIndex = startRow; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    const rowMeal = detectWeeklyMeal(row.slice(0, 3).join(" "));
+    if (!fixedMeal && rowMeal) activeMeal = rowMeal;
+    const mealId = fixedMeal || activeMeal;
+    if (!mealId) continue;
+
+    for (const day of days) {
+      const dayColumn = dayInfo.columns.get(day.id);
+      if (!dayColumn) continue;
+      const names = extractWeeklyDishNames(row[dayColumn.columnIndex]);
+      if (names.length) buckets[mealId][day.id].push(...names);
+    }
+  }
+
+  const mealsToWrite = fixedMeal ? [fixedMeal] : [...rowMeals];
+  if (!mealsToWrite.length) mealsToWrite.push(weeklyActiveMeal);
+  for (const mealId of mealsToWrite) {
+    for (const day of days) {
+      const names = buckets[mealId][day.id] || [];
+      addWeeklyImportSlot(result, day.id, mealId, names, true);
+    }
+  }
+  return true;
+}
+
+function parseWeeklyWorkbook(workbook, fileName) {
+  const result = createWeeklyImportResult("excel", fileName);
+  for (const sheetName of workbook.SheetNames || []) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+    parseWeeklyWorksheet(sheetName, rows, result);
+  }
+  if (!result.coveredSlots.length) {
+    result.warnings.push("没有找到星期列，请确认表格中包含星期一至星期五或 Mon 至 Fri 的表头。");
+  }
+  return result;
+}
+
+function getOcrBoxCenter(box) {
+  const bbox = box?.bbox || {};
+  return {
+    x: (Number(bbox.x0 || 0) + Number(bbox.x1 || 0)) / 2,
+    y: (Number(bbox.y0 || 0) + Number(bbox.y1 || 0)) / 2,
+    width: Math.max(0, Number(bbox.x1 || 0) - Number(bbox.x0 || 0)),
+    height: Math.max(0, Number(bbox.y1 || 0) - Number(bbox.y0 || 0))
+  };
+}
+
+function parseWeeklyOcrFallback(text, result) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  let currentDay = "";
+  let currentMeal = "";
+  for (const line of lines) {
+    const dayId = detectWeeklyDay(line);
+    const mealId = detectWeeklyMeal(line);
+    if (dayId) {
+      currentDay = dayId;
+      if (mealId) currentMeal = mealId;
+      continue;
+    }
+    if (mealId) {
+      currentMeal = mealId;
+      continue;
+    }
+    if (!currentMeal) currentMeal = weeklyActiveMeal;
+    if (!currentDay) continue;
+    const names = extractWeeklyDishNames(line);
+    if (!names.length) continue;
+    const existing = result.menu[currentDay][currentMeal].filter(Boolean);
+    addWeeklyImportSlot(result, currentDay, currentMeal, [...existing, ...names], true);
+  }
+}
+
+function parseWeeklyOcrData(data, fileName) {
+  const result = createWeeklyImportResult("image", fileName);
+  const lines = Array.isArray(data?.lines) ? data.lines.filter((line) => String(line.text || "").trim()) : [];
+  const words = Array.isArray(data?.words) ? data.words.filter((word) => String(word.text || "").trim()) : [];
+  const dayAnchors = [];
+  const mealAnchors = [];
+
+  for (const box of words.length ? words : lines) {
+    const text = String(box.text || "");
+    const position = getOcrBoxCenter(box);
+    const dayId = detectWeeklyDay(text);
+    const mealId = detectWeeklyMeal(text);
+    if (dayId && !dayAnchors.some((anchor) => anchor.dayId === dayId)) dayAnchors.push({ dayId, ...position });
+    if (mealId && !mealAnchors.some((anchor) => anchor.mealId === mealId)) mealAnchors.push({ mealId, ...position });
+  }
+
+  if (!dayAnchors.length) {
+    parseWeeklyOcrFallback(data?.text || lines.map((line) => line.text).join("\n"), result);
+    if (!result.coveredSlots.length) result.warnings.push("图片中没有识别到星期位置，请换一张清晰的餐表图片。");
+    return result;
+  }
+
+  dayAnchors.sort((a, b) => a.x - b.x);
+  mealAnchors.sort((a, b) => a.y - b.y);
+  const gaps = dayAnchors.slice(1).map((anchor, index) => anchor.x - dayAnchors[index].x).filter((gap) => gap > 0);
+  const columnGap = gaps.length ? gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length : 180;
+  const firstDayX = dayAnchors[0].x;
+
+  const ocrLines = lines.length ? lines : words;
+  for (const line of ocrLines) {
+    const text = String(line.text || "").trim();
+    if (!text || detectWeeklyDay(text) || detectWeeklyMeal(text)) continue;
+    const position = getOcrBoxCenter(line);
+    if (position.x < firstDayX - columnGap * 0.45) continue;
+    const names = extractWeeklyDishNames(text);
+    if (!names.length) continue;
+
+    const mealAnchor = [...mealAnchors].reverse().find((anchor) => anchor.y <= position.y + position.height) || null;
+    const mealId = mealAnchor?.mealId || weeklyActiveMeal;
+    const matchingDays = dayAnchors.filter((anchor) => anchor.x >= position.x - position.width / 2 && anchor.x <= position.x + position.width / 2);
+    if (names.length > 1 && position.width > columnGap * 1.35 && matchingDays.length >= names.length) {
+      names.forEach((name, index) => {
+        const dayId = matchingDays[index].dayId;
+        const existing = result.menu[dayId][mealId].filter(Boolean);
+        addWeeklyImportSlot(result, dayId, mealId, [...existing, name], true);
+      });
+      continue;
+    }
+
+    const day = dayAnchors.reduce((nearest, anchor) =>
+      Math.abs(anchor.x - position.x) < Math.abs(nearest.x - position.x) ? anchor : nearest
+    );
+    const existing = result.menu[day.dayId][mealId].filter(Boolean);
+    addWeeklyImportSlot(result, day.dayId, mealId, [...existing, ...names], true);
+  }
+
+  if (!result.coveredSlots.length) {
+    parseWeeklyOcrFallback(data?.text || lines.map((line) => line.text).join("\n"), result);
+  }
+  if (!result.coveredSlots.length) result.warnings.push("没有识别到菜品内容，请换一张清晰度更高的图片。");
+  return result;
+}
+
+function updateWeeklyImportProgress(message) {
+  weeklyImportMessage.textContent = message;
+}
+
+function renderWeeklyImportPreview(result) {
+  if (!result) {
+    weeklyImportPreview.innerHTML = `<div class="empty-state">请选择一个 Excel 文件或菜单图片。</div>`;
+    weeklyImportApply.disabled = true;
+    return;
+  }
+  const dishCount = countWeeklyImportDishes(result);
+  const warning = result.warnings.length ? `<div class="import-warning">${result.warnings.map(escapeHtml).join("<br />")}</div>` : "";
+  const rows = days.flatMap((day) => meals.map((meal) => {
+    const key = `${day.id}:${meal.id}`;
+    const names = result.menu[day.id][meal.id].filter(Boolean);
+    const content = names.length
+      ? names.map((name) => `<span class="import-dish-tag">${escapeHtml(name)}</span>`).join("")
+      : `<span class="import-empty">空白</span>`;
+    return `<tr><th>${day.label}</th><th>${meal.label}</th><td>${content}</td><td>${result.coveredSlotKeys.has(key) ? "已识别" : "未识别"}</td></tr>`;
+  })).join("");
+  weeklyImportPreview.innerHTML = `
+    <div class="import-summary"><strong>${escapeHtml(result.fileName)}</strong><span>识别 ${dishCount} 个菜品，覆盖 ${result.coveredSlots.length} 个餐次</span></div>
+    ${warning}
+    <div class="weekly-import-table-wrap">
+      <table class="weekly-import-table">
+        <thead><tr><th>星期</th><th>餐次</th><th>识别出的菜品</th><th>状态</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  weeklyImportApply.disabled = !result.coveredSlots.length;
+}
+
+async function recognizeWeeklyImportFile(file) {
+  if (!file) return;
+  weeklyImportResult = null;
+  weeklyImportApply.disabled = true;
+  renderWeeklyImportPreview(null);
+  if (file.size > WEEKLY_IMPORT_MAX_BYTES) {
+    updateWeeklyImportProgress("文件不能超过 20MB。");
+    return;
+  }
+
+  weeklyImportBusy = true;
+  weeklyImportFile.disabled = true;
+  updateWeeklyImportProgress("正在读取文件...");
+  try {
+    try { await loadAllDishes(); } catch {}
+    const isExcel = /\.(xlsx|xls)$/i.test(file.name) || /spreadsheet|excel/.test(file.type);
+    if (isExcel) {
+      if (!window.XLSX) throw new Error("Excel 解析组件加载失败，请检查网络后刷新页面。");
+      updateWeeklyImportProgress("正在分析 Excel 工作表、日期和餐次...");
+      const workbook = window.XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      weeklyImportResult = parseWeeklyWorkbook(workbook, file.name);
+    } else {
+      if (!window.Tesseract?.recognize) throw new Error("图片 OCR 组件加载失败，请检查网络后刷新页面。");
+      updateWeeklyImportProgress("正在进行图片 OCR 识别，首次识别可能需要下载中文模型...");
+      const ocr = await window.Tesseract.recognize(file, "chi_sim+eng", {
+        logger: (info) => {
+          if (info?.status && typeof info.progress === "number") {
+            updateWeeklyImportProgress(`${info.status} ${Math.round(info.progress * 100)}%`);
+          }
+        }
+      });
+      weeklyImportResult = parseWeeklyOcrData(ocr.data, file.name);
+    }
+    renderWeeklyImportPreview(weeklyImportResult);
+    updateWeeklyImportProgress(weeklyImportResult.coveredSlots.length ? "识别完成，请检查预览后填入。" : "识别完成，但没有可填入的内容。");
+  } catch (error) {
+    weeklyImportResult = null;
+    renderWeeklyImportPreview(null);
+    updateWeeklyImportProgress(friendlyError(error));
+  } finally {
+    weeklyImportBusy = false;
+    weeklyImportFile.disabled = false;
+  }
+}
+
+function applyWeeklyImport() {
+  if (!weeklyImportResult?.coveredSlots.length) return;
+  const nextMenu = normalizeWeeklyMenu(weeklyMenu);
+  for (const slot of weeklyImportResult.coveredSlots) {
+    nextMenu[slot.dayId][slot.mealId] = [...weeklyImportResult.menu[slot.dayId][slot.mealId]];
+  }
+  weeklyMenu = nextMenu;
+  renderWeeklyTable();
+  weeklyImportModal.classList.add("hidden");
+  weeklyMessage.textContent = "识别结果已填入一周菜单，请检查后点击“保存一周菜单”。";
+}
+
+function closeWeeklyImportModal() {
+  if (weeklyImportBusy) return;
+  weeklyImportModal.classList.add("hidden");
+  weeklyImportFile.value = "";
+  weeklyImportResult = null;
+  weeklyImportMessage.textContent = "";
+  renderWeeklyImportPreview(null);
+}
+
 async function loadWeeklyMenu() {
   weeklyMessage.textContent = "正在加载一周菜单...";
   try {
@@ -1443,6 +1822,23 @@ function bindEvents() {
     saveWeeklyMenu();
   });
 
+  document.querySelector("#weeklyImportButton").addEventListener("click", () => {
+    weeklyImportModal.classList.remove("hidden");
+    weeklyImportMessage.textContent = "请选择一个 Excel 文件或菜单图片。";
+    weeklyImportFile.value = "";
+    weeklyImportResult = null;
+    renderWeeklyImportPreview(null);
+  });
+  weeklyImportFile.addEventListener("change", (event) => {
+    recognizeWeeklyImportFile(event.target.files[0] || null);
+  });
+  weeklyImportApply.addEventListener("click", applyWeeklyImport);
+  document.querySelector("#weeklyImportClose").addEventListener("click", closeWeeklyImportModal);
+  document.querySelector("#weeklyImportCancel").addEventListener("click", closeWeeklyImportModal);
+  weeklyImportModal.addEventListener("click", (event) => {
+    if (event.target === weeklyImportModal) closeWeeklyImportModal();
+  });
+
   document.querySelectorAll(".meal-tab").forEach((button) => {
     button.addEventListener("click", () => setWeeklyMeal(button.dataset.weeklyMeal));
   });
@@ -1515,6 +1911,7 @@ function bindEvents() {
     if (event.key === "Escape") {
       if (!commentModal.classList.contains("hidden")) closeCommentModal();
       if (!adminModal.classList.contains("hidden")) adminModal.classList.add("hidden");
+      if (!weeklyImportModal.classList.contains("hidden")) closeWeeklyImportModal();
     }
   });
 }

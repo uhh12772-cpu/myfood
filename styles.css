@@ -324,7 +324,7 @@ input:focus, textarea:focus {
 }
 .weekly-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1180px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -351,6 +351,49 @@ input:focus, textarea:focus {
   font-size: 13px;
 }
 .weekly-cell:focus { box-shadow: inset 0 0 0 2px rgba(15, 118, 110, .22); }
+.weekly-import-panel { width: min(900px, 100%); }
+.import-file-picker {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed #bdc9c6;
+  background: var(--soft);
+  color: var(--accent-dark);
+}
+.import-file-picker input { padding: 8px; background: #fff; }
+.import-hint { margin: 10px 0 14px; color: var(--muted); font-size: 12px; }
+.weekly-import-preview {
+  min-height: 170px;
+  border: 1px solid var(--line);
+  background: #fbfcfc;
+}
+.import-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.import-summary strong { color: var(--ink); overflow-wrap: anywhere; }
+.import-warning {
+  margin: 10px 12px;
+  padding: 8px 10px;
+  background: #fff7ed;
+  color: var(--danger);
+  font-size: 12px;
+}
+.weekly-import-table-wrap { max-height: 430px; overflow: auto; }
+.weekly-import-table { width: 100%; min-width: 620px; border-collapse: collapse; table-layout: fixed; }
+.weekly-import-table th,
+.weekly-import-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 12px; }
+.weekly-import-table thead th { position: sticky; top: 0; z-index: 1; background: #e9f3f0; color: var(--accent-dark); }
+.weekly-import-table tbody th { width: 74px; color: var(--ink); font-weight: 800; }
+.weekly-import-table tbody th:nth-child(2) { width: 58px; color: var(--accent-dark); }
+.weekly-import-table td:last-child { width: 58px; color: var(--muted); white-space: nowrap; }
+.import-dish-tag { display: inline-block; margin: 0 5px 4px 0; padding: 3px 6px; background: #e9f3f0; color: var(--accent-dark); }
+.import-empty { color: #9aa6a7; }
 .survey-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

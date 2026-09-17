@@ -63,7 +63,10 @@
             <p class="eyebrow">WEEKLY MENU</p>
             <h2>一周菜品安排</h2>
           </div>
-          <span class="count-badge">星期一至星期五</span>
+          <div class="section-badges">
+            <span class="count-badge">星期一至星期五</span>
+            <button id="weeklyImportButton" class="secondary" type="button">AI识别导入</button>
+          </div>
         </div>
         <form id="weeklyMenuForm">
           <div class="meal-switcher" role="tablist" aria-label="选择餐次">
@@ -248,6 +251,33 @@
       </div>
     </div>
 
+    <div id="weeklyImportModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="weeklyImportTitle">
+      <div class="modal-panel weekly-import-panel">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">AI WEEKLY IMPORT</p>
+            <h2 id="weeklyImportTitle">AI识别一周菜单</h2>
+          </div>
+          <button id="weeklyImportClose" class="ghost modal-close" type="button">关闭</button>
+        </div>
+        <label class="import-file-picker">
+          选择 Excel 或菜单图片
+          <input id="weeklyImportFile" type="file" accept=".xlsx,.xls,image/jpeg,image/png,image/webp" />
+        </label>
+        <p class="import-hint">支持学校餐表这类中英文对照文件。识别结果会先预览，未识别的餐次或菜品保持空白。</p>
+        <div id="weeklyImportMessage" class="message"></div>
+        <div id="weeklyImportPreview" class="weekly-import-preview">
+          <div class="empty-state">请选择一个 Excel 文件或菜单图片。</div>
+        </div>
+        <div class="form-actions">
+          <button id="weeklyImportApply" class="primary" type="button" disabled>填入一周菜单</button>
+          <button id="weeklyImportCancel" class="secondary" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
