@@ -16,6 +16,7 @@ const DISH_CACHE_MS = 12000;
 const DAILY_VOTE_LIMIT = 15;
 const WEEKLY_COLUMNS = 16;
 const WEEKLY_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
+const WEEKLY_OCR_TIMEOUT_MS = 90000;
 
 const menuView = document.querySelector("#menuView");
 const weekView = document.querySelector("#weekView");
@@ -65,6 +66,7 @@ let weeklyMenu = {};
 let weeklyActiveMeal = "breakfast";
 let weeklyImportResult = null;
 let weeklyImportBusy = false;
+let weeklyImportRunId = 0;
 let voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
 let adminSearchTimer = null;
 let activeCommentDish = null;
@@ -262,6 +264,12 @@ function normalizeComment(row) {
 
 function friendlyError(error) {
   const message = String(error?.message || error || "");
+  if (/OCR_TIMEOUT/i.test(message)) {
+    return "图片识别超过 90 秒，请检查网络后重试，或换用更清晰、尺寸更小的图片。";
+  }
+  if (/OCR_MODEL|traineddata|language data/i.test(message)) {
+    return "中文 OCR 模型加载失败，请确认已上传 tessdata/chi_sim.traineddata.gz，然后刷新页面重试。";
+  }
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
   }
@@ -532,19 +540,38 @@ function renderRecognizedDishes(items) {
     : `<div class="empty-state">没有识别到菜名。</div>`;
 }
 
-async function recognizeImageTextInBrowser() {
-  if (!selectedRecognitionFile || typeof window.TextDetector !== "function") {
-    return { text: "", supported: false };
+async function recognizeImageFileInBrowser(file) {
+  if (!file || typeof window.TextDetector !== "function") {
+    return { text: "", data: null, supported: false };
   }
+  let bitmap = null;
   try {
     const detector = new window.TextDetector();
-    const bitmap = await createImageBitmap(selectedRecognitionFile);
+    bitmap = await createImageBitmap(file);
     const results = await detector.detect(bitmap);
-    if (typeof bitmap.close === "function") bitmap.close();
-    return { text: results.map((item) => item.rawValue).filter(Boolean).join("\n"), supported: true };
+    const lines = results.map((item) => {
+      const box = item.boundingBox || {};
+      return {
+        text: item.rawValue || "",
+        bbox: {
+          x0: Number(box.x || box.left || 0),
+          y0: Number(box.y || box.top || 0),
+          x1: Number(box.x || box.left || 0) + Number(box.width || 0),
+          y1: Number(box.y || box.top || 0) + Number(box.height || 0)
+        }
+      };
+    }).filter((item) => item.text);
+    const text = lines.map((item) => item.text).join("\n");
+    return { text, data: { text, lines, words: lines }, supported: true };
   } catch {
-    return { text: "", supported: true };
+    return { text: "", data: null, supported: true };
+  } finally {
+    if (bitmap && typeof bitmap.close === "function") bitmap.close();
   }
+}
+
+async function recognizeImageTextInBrowser() {
+  return recognizeImageFileInBrowser(selectedRecognitionFile);
 }
 
 async function recognizeMenuInput() {
@@ -1260,6 +1287,16 @@ function updateWeeklyImportProgress(message) {
   weeklyImportMessage.textContent = message;
 }
 
+function withTimeout(promise, timeoutMs, errorCode) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(errorCode)), timeoutMs);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
 function renderWeeklyImportPreview(result) {
   if (!result) {
     weeklyImportPreview.innerHTML = `<div class="empty-state">请选择一个 Excel 文件或菜单图片。</div>`;
@@ -1290,6 +1327,7 @@ function renderWeeklyImportPreview(result) {
 
 async function recognizeWeeklyImportFile(file) {
   if (!file) return;
+  const runId = ++weeklyImportRunId;
   weeklyImportResult = null;
   weeklyImportApply.disabled = true;
   renderWeeklyImportPreview(null);
@@ -1310,24 +1348,43 @@ async function recognizeWeeklyImportFile(file) {
       const workbook = window.XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
       weeklyImportResult = parseWeeklyWorkbook(workbook, file.name);
     } else {
-      if (!window.Tesseract?.recognize) throw new Error("图片 OCR 组件加载失败，请检查网络后刷新页面。");
-      updateWeeklyImportProgress("正在进行图片 OCR 识别，首次识别可能需要下载中文模型...");
-      const ocr = await window.Tesseract.recognize(file, "chi_sim+eng", {
-        logger: (info) => {
-          if (info?.status && typeof info.progress === "number") {
-            updateWeeklyImportProgress(`${info.status} ${Math.round(info.progress * 100)}%`);
-          }
-        }
-      });
-      weeklyImportResult = parseWeeklyOcrData(ocr.data, file.name);
+      updateWeeklyImportProgress("正在检查浏览器文字识别能力...");
+      const nativeOcr = await recognizeImageFileInBrowser(file);
+      if (runId !== weeklyImportRunId) return;
+      if (nativeOcr.text) {
+        weeklyImportResult = parseWeeklyOcrData(nativeOcr.data, file.name);
+      } else {
+        if (!window.Tesseract?.recognize) throw new Error("图片 OCR 组件加载失败，请检查网络后刷新页面。");
+        const modelPath = new URL("tessdata", document.baseURI).href.replace(/\/$/, "");
+        updateWeeklyImportProgress("正在加载网站内置中文模型并识别图片...");
+        const ocr = await withTimeout(
+          window.Tesseract.recognize(file, "chi_sim", {
+            langPath: modelPath,
+            gzip: true,
+            logger: (info) => {
+              if (runId !== weeklyImportRunId) return;
+              if (info?.status && typeof info.progress === "number") {
+                updateWeeklyImportProgress(`${info.status} ${Math.round(info.progress * 100)}%`);
+              }
+            }
+          }),
+          WEEKLY_OCR_TIMEOUT_MS,
+          "OCR_TIMEOUT"
+        );
+        if (runId !== weeklyImportRunId) return;
+        weeklyImportResult = parseWeeklyOcrData(ocr.data, file.name);
+      }
     }
+    if (runId !== weeklyImportRunId) return;
     renderWeeklyImportPreview(weeklyImportResult);
     updateWeeklyImportProgress(weeklyImportResult.coveredSlots.length ? "识别完成，请检查预览后填入。" : "识别完成，但没有可填入的内容。");
   } catch (error) {
+    if (runId !== weeklyImportRunId) return;
     weeklyImportResult = null;
     renderWeeklyImportPreview(null);
     updateWeeklyImportProgress(friendlyError(error));
   } finally {
+    if (runId !== weeklyImportRunId) return;
     weeklyImportBusy = false;
     weeklyImportFile.disabled = false;
   }
@@ -1346,7 +1403,9 @@ function applyWeeklyImport() {
 }
 
 function closeWeeklyImportModal() {
-  if (weeklyImportBusy) return;
+  weeklyImportRunId += 1;
+  weeklyImportBusy = false;
+  weeklyImportFile.disabled = false;
   weeklyImportModal.classList.add("hidden");
   weeklyImportFile.value = "";
   weeklyImportResult = null;
