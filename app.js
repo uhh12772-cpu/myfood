@@ -9,41 +9,36 @@ const CONFIG = {
 
 const ADMIN_STATE_KEY = "dish-menu-supabase-admin-v1";
 const VISITOR_KEY = "dish-menu-visitor-key-v1";
-const SURVEY_CHOICE_KEY = "dish-menu-survey-choice-v1";
-const DISH_COLUMNS = "id,name,image_url,image_path,mime_type,vote_count,created_at,updated_at";
+const DISH_COLUMNS = "id,name,restaurant_key,image_url,image_path,mime_type,vote_count,created_at,updated_at";
 const COMMENT_COLUMNS = "id,dish_id,content,like_count,created_at,updated_at";
+const DISCUSSION_COLUMNS = "id,parent_id,content,like_count,visitor_key,created_at,updated_at";
 const DISH_CACHE_MS = 12000;
 const DAILY_VOTE_LIMIT = 15;
 const WEEKLY_COLUMNS = 16;
 const WEEKLY_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
 const WEEKLY_OCR_TIMEOUT_MS = 90000;
 
-const menuView = document.querySelector("#menuView");
 const weekView = document.querySelector("#weekView");
 const voteView = document.querySelector("#voteView");
-const surveyView = document.querySelector("#surveyView");
+const discussionView = document.querySelector("#discussionView");
 const rankView = document.querySelector("#rankView");
 const adminView = document.querySelector("#adminView");
-const resultGrid = document.querySelector("#resultGrid");
-const recognitionGrid = document.querySelector("#recognitionGrid");
 const adminGrid = document.querySelector("#adminGrid");
 const voteGrid = document.querySelector("#voteGrid");
-const rankList = document.querySelector("#rankList");
+const hotbaoRankList = document.querySelector("#hotbaoRankList");
+const qilifangRankList = document.querySelector("#qilifangRankList");
+const discussionList = document.querySelector("#discussionList");
+const discussionMessage = document.querySelector("#discussionMessage");
 const weeklyTable = document.querySelector("#weeklyTable");
 const weeklyImportModal = document.querySelector("#weeklyImportModal");
 const weeklyImportFile = document.querySelector("#weeklyImportFile");
 const weeklyImportMessage = document.querySelector("#weeklyImportMessage");
 const weeklyImportPreview = document.querySelector("#weeklyImportPreview");
 const weeklyImportApply = document.querySelector("#weeklyImportApply");
-const searchMessage = document.querySelector("#searchMessage");
-const recognitionMessage = document.querySelector("#recognitionMessage");
 const adminMessage = document.querySelector("#adminMessage");
 const weeklyMessage = document.querySelector("#weeklyMessage");
 const voteMessage = document.querySelector("#voteMessage");
 const voteQuota = document.querySelector("#voteQuota");
-const surveyMessage = document.querySelector("#surveyMessage");
-const cafeteriaSurveyMessage = document.querySelector("#cafeteriaSurveyMessage");
-const canteenChoiceMessage = document.querySelector("#canteenChoiceMessage");
 const rankMessage = document.querySelector("#rankMessage");
 const imagePreview = document.querySelector("#imagePreview");
 const commentModal = document.querySelector("#commentModal");
@@ -60,17 +55,23 @@ let dishLoadPromise = null;
 let selectedDishFile = null;
 let selectedDishBlob = null;
 let selectedDishMimeType = "image/jpeg";
-let selectedRecognitionFile = null;
 let bulkDishFiles = [];
-let weeklyMenu = {};
+let weeklyMenus = {};
+let weeklyRestaurant = "hotbao";
 let weeklyActiveMeal = "breakfast";
 let weeklyImportResult = null;
 let weeklyImportBusy = false;
 let weeklyImportRunId = 0;
 let voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
+let voteRestaurant = "hotbao";
 let adminSearchTimer = null;
 let activeCommentDish = null;
-let currentView = "menu";
+let currentView = "vote";
+
+const restaurants = [
+  { id: "hotbao", label: "荷特宝" },
+  { id: "qilifang", label: "七立方" }
+];
 
 const days = [
   { id: "monday", value: 1, label: "星期一" },
@@ -85,30 +86,6 @@ const meals = [
   { id: "lunch", label: "午餐" },
   { id: "dinner", label: "晚餐" }
 ];
-
-const surveys = {
-  cafeteria_rating: {
-    optionsTarget: "#cafeteriaOptions",
-    resultsTarget: "#cafeteriaResults",
-    storageKey: "cafeteria_rating",
-    options: [
-      { key: "very_good", label: "很满意" },
-      { key: "good", label: "比较满意" },
-      { key: "normal", label: "一般" },
-      { key: "bad", label: "不太满意" },
-      { key: "very_bad", label: "不满意" }
-    ]
-  },
-  canteen_choice: {
-    optionsTarget: "#canteenChoiceOptions",
-    resultsTarget: "#canteenChoiceResults",
-    storageKey: "canteen_choice",
-    options: [
-      { key: "hotbao", label: "荷特宝" },
-      { key: "qilifang", label: "七立方" }
-    ]
-  }
-};
 
 const menuNameLexicon = [
   "蒜泥白肉", "猪肉炖粉条", "宫保鸡丁", "红烧鸭块", "番茄牛腩", "蒸广东腊肠", "雪菜蒸小黄鱼", "酸菜鱼",
@@ -127,7 +104,6 @@ const menuNameLexicon = [
   "海鲜炒粉丝", "酸奶", "梨", "橘子", "冰糖雪梨", "苹果", "水蜜桃汁"
 ];
 
-const localDishSignals = /(红烧|清炒|蒜蓉|蒜泥|香煎|炒|烧|炖|煮|蒸|煎|烤|爆|卤|拌|油焖|汤|羹|饭|粥|面|粉|糕|包|馒|蛋|肉|鱼|虾|蟹|鸡|鸭|牛|羊|猪|豆腐|青菜|生菜|西兰花|茄子|黄瓜|冬瓜|芹菜|香干|香肠|鸡腿|南瓜|土豆|红薯|紫薯|玉米|苹果|梨|橘子|酸奶)/u;
 const nonDishWords = new Set([
   "今天", "明天", "本周", "菜单", "菜品", "菜名", "早餐", "午餐", "晚餐", "早饭", "午饭", "晚饭",
   "星期一", "星期二", "星期三", "星期四", "星期五", "周一", "周二", "周三", "周四", "周五",
@@ -147,20 +123,18 @@ function createEmptyWeeklyMenu() {
   ]));
 }
 
+function createEmptyWeeklyMenus() {
+  return Object.fromEntries(restaurants.map((restaurant) => [restaurant.id, createEmptyWeeklyMenu()]));
+}
+
+function restaurantLabel(restaurantKey) {
+  return restaurants.find((restaurant) => restaurant.id === restaurantKey)?.label || "荷特宝";
+}
+
 function normalizeForDishMatch(value) {
   return String(value || "")
     .toLowerCase()
     .replace(/[^\u3400-\u9fffa-z0-9]/gi, "");
-}
-
-function cleanExtractedDishName(value) {
-  return String(value || "")
-    .replace(/[0-9０-９]+/g, "")
-    .replace(/^(水果|饮料|主食|汤品|菜品|早餐|午餐|晚餐)(是|为|有)?/u, "")
-    .replace(/^[的有和及与加配是为]+/u, "")
-    .replace(/[的有和及与加配是为]+$/u, "")
-    .replace(/[^\u3400-\u9fffA-Za-z0-9]/g, "")
-    .trim();
 }
 
 function isAdmin() {
@@ -186,7 +160,7 @@ function updateAdminState() {
     adminLogoutButton.classList.remove("hidden");
   } else {
     adminLoginButton.textContent = "管理员登录";
-    adminStatusText.textContent = "开放维护模式：可以录入菜品、模糊搜索和单个删除；登录管理员后可批量上传和一键清空。";
+    adminStatusText.textContent = "普通用户可以录入和搜索菜品；删除、批量上传和一键清空仅限管理员。";
     adminLogoutButton.classList.add("hidden");
   }
 }
@@ -203,21 +177,6 @@ function getVisitorKey() {
     localStorage.setItem(VISITOR_KEY, key);
   }
   return key;
-}
-
-function readSurveyChoices() {
-  try {
-    return JSON.parse(localStorage.getItem(SURVEY_CHOICE_KEY) || "{}");
-  } catch {
-    localStorage.removeItem(SURVEY_CHOICE_KEY);
-    return {};
-  }
-}
-
-function rememberSurveyChoice(surveyKey, optionKey) {
-  const choices = readSurveyChoices();
-  choices[surveyKey] = optionKey;
-  localStorage.setItem(SURVEY_CHOICE_KEY, JSON.stringify(choices));
 }
 
 function openAdminModal() {
@@ -241,6 +200,7 @@ function normalizeDish(row) {
   return {
     id: row.id,
     name: row.name || "",
+    restaurantKey: row.restaurant_key || "hotbao",
     imageUrl: row.image_url || publicImageUrl(imagePath),
     imagePath,
     mimeType: row.mime_type || "",
@@ -273,8 +233,11 @@ function friendlyError(error) {
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
   }
-  if (/get_vote_status|submit_survey|get_survey_results|function .* does not exist|Could not find the function/i.test(message)) {
-    return "Supabase 新功能表和函数还没创建，请先执行 new/supabase-feature-update.sql。";
+  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|function .* does not exist|Could not find the function/i.test(message)) {
+    return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
+  }
+  if (/get_vote_status/i.test(message)) {
+    return "Supabase 投票函数还没创建，请先执行 new/supabase-feature-update.sql。";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
     return "连接 Supabase 失败，请检查网络、Project URL、anon key 和 Supabase 项目状态。";
@@ -336,9 +299,12 @@ async function loadAllDishes(force = false) {
   return dishLoadPromise;
 }
 
-function filterDishes(dishes, name = "", sort = "") {
+function filterDishes(dishes, name = "", sort = "", restaurantKey = "") {
   const query = normalizeForDishMatch(name);
-  const filtered = dishes.filter((dish) => !query || normalizeForDishMatch(dish.name).includes(query));
+  const filtered = dishes.filter((dish) =>
+    (!query || normalizeForDishMatch(dish.name).includes(query))
+    && (!restaurantKey || dish.restaurantKey === restaurantKey)
+  );
   if (sort === "votes") {
     return [...filtered].sort((a, b) =>
       Number(b.voteCount || 0) - Number(a.voteCount || 0) ||
@@ -348,17 +314,18 @@ function filterDishes(dishes, name = "", sort = "") {
   return [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-async function fetchDishes(name = "", sort = "") {
+async function fetchDishes(name = "", sort = "", restaurantKey = "") {
   const dishes = await loadAllDishes();
-  return filterDishes(dishes, name, sort);
+  return filterDishes(dishes, name, sort, restaurantKey);
 }
 
-function findDishForName(name) {
+function findDishForName(name, restaurantKey = "") {
   const normalized = normalizeForDishMatch(name);
   if (!normalized) return null;
-  const exact = allDishes.find((dish) => normalizeForDishMatch(dish.name) === normalized);
+  const restaurantDishes = allDishes.filter((dish) => !restaurantKey || dish.restaurantKey === restaurantKey);
+  const exact = restaurantDishes.find((dish) => normalizeForDishMatch(dish.name) === normalized);
   if (exact) return exact;
-  return allDishes
+  return restaurantDishes
     .filter((dish) => {
       const dishName = normalizeForDishMatch(dish.name);
       return normalized.includes(dishName) || dishName.includes(normalized);
@@ -402,7 +369,7 @@ function renderCards(target, dishes, emptyText, options = {}) {
       <article class="dish-card">
         ${renderDishImage(dish)}
         <div class="dish-info">
-          <h3>${escapeHtml(dish.name)}</h3>
+          <div><h3>${escapeHtml(dish.name)}</h3><span class="restaurant-badge">${restaurantLabel(dish.restaurantKey)}</span></div>
           <span>${new Date(dish.createdAt).toLocaleDateString("zh-CN")}</span>
         </div>
         ${options.deleteButton ? `
@@ -420,21 +387,9 @@ function renderCards(target, dishes, emptyText, options = {}) {
   }
 }
 
-async function searchDishes(name) {
-  searchMessage.textContent = "正在搜索...";
-  try {
-    const dishes = await fetchDishes(name);
-    renderCards(resultGrid, dishes, "没有找到对应图片，请先在后台录入。");
-    searchMessage.textContent = dishes.length ? `找到 ${dishes.length} 条结果。` : "没有找到对应菜品。";
-  } catch (error) {
-    resultGrid.innerHTML = "";
-    searchMessage.textContent = friendlyError(error);
-  }
-}
-
 function getDishCandidates() {
   const candidates = new Map();
-  for (const dish of allDishes) {
+  for (const dish of allDishes.filter((item) => item.restaurantKey === weeklyRestaurant)) {
     const normalized = normalizeForDishMatch(dish.name);
     if (!normalized) continue;
     candidates.set(normalized, { name: dish.name, normalized, dish });
@@ -442,7 +397,7 @@ function getDishCandidates() {
   for (const name of menuNameLexicon) {
     const normalized = normalizeForDishMatch(name);
     if (!normalized || candidates.has(normalized)) continue;
-    candidates.set(normalized, { name, normalized, dish: findDishForName(name) });
+    candidates.set(normalized, { name, normalized, dish: findDishForName(name, weeklyRestaurant) });
   }
   return [...candidates.values()].sort((a, b) => b.normalized.length - a.normalized.length);
 }
@@ -468,76 +423,6 @@ function extractKnownDishMatches(sourceText) {
     seen.add(item.normalized);
   }
   return accepted.sort((a, b) => a.start - b.start);
-}
-
-function extractLikelyDishNames(sourceText) {
-  const segments = String(sourceText || "")
-    .replace(/[\r\n\t]+/g, "\n")
-    .replace(/[()（）【】[\]{}<>《》]/g, "\n")
-    .replace(/[、，,。；;:：|/\\]+/g, "\n")
-    .split(/\s+|\n+/)
-    .map(cleanExtractedDishName)
-    .filter(Boolean);
-  const names = [];
-  const seen = new Set();
-  for (const segment of segments) {
-    if (segment.length < 2 || segment.length > 18) continue;
-    if (!/[\u3400-\u9fff]/.test(segment)) continue;
-    if (nonDishWords.has(segment)) continue;
-    if (/^(今天|明天|本周|菜单|星期|周[一二三四五六日天])/.test(segment)) continue;
-    if (!localDishSignals.test(segment)) continue;
-    const normalized = normalizeForDishMatch(segment);
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    names.push(segment);
-  }
-  return names;
-}
-
-function createRecognitionItem(name, dish = null, source = "smart") {
-  return {
-    name,
-    dishId: dish?.id || null,
-    imageUrl: dish?.imageUrl || "",
-    matchedName: dish?.name || null,
-    source
-  };
-}
-
-function mergeRecognitionItems(groups) {
-  const ordered = [];
-  const seen = new Set();
-  for (const group of groups) {
-    for (const item of group) {
-      if (!item.name) continue;
-      const key = item.dishId ? `dish:${item.dishId}` : `name:${normalizeForDishMatch(item.name)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      ordered.push(item);
-    }
-  }
-  return ordered;
-}
-
-function recognizeDishesFromText(text) {
-  const knownItems = extractKnownDishMatches(text).map((item) => createRecognitionItem(item.name, item.dish, "known"));
-  const smartItems = extractLikelyDishNames(text).map((name) => createRecognitionItem(name, findDishForName(name), "smart"));
-  return mergeRecognitionItems([knownItems, smartItems]);
-}
-
-function renderRecognizedDishes(items) {
-  recognitionGrid.innerHTML = items.length
-    ? items.map((item) => `
-      <article class="recognized-card">
-        <div class="recognized-media${item.imageUrl ? "" : " empty"}">
-          ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" />` : ""}
-        </div>
-        <div class="recognized-info">
-          <h3>${escapeHtml(item.name)}</h3>
-          <span>${item.imageUrl ? "已匹配图片" : "暂无图片"}</span>
-        </div>
-      </article>`).join("")
-    : `<div class="empty-state">没有识别到菜名。</div>`;
 }
 
 async function recognizeImageFileInBrowser(file) {
@@ -570,45 +455,13 @@ async function recognizeImageFileInBrowser(file) {
   }
 }
 
-async function recognizeImageTextInBrowser() {
-  return recognizeImageFileInBrowser(selectedRecognitionFile);
-}
-
-async function recognizeMenuInput() {
-  const text = document.querySelector("#recognitionText").value.trim();
-  const submitButton = document.querySelector("#recognitionForm button[type='submit']");
-  if (!text && !selectedRecognitionFile) {
-    recognitionMessage.textContent = "请先输入菜单文字或选择图片。";
-    return;
-  }
-  submitButton.disabled = true;
-  recognitionMessage.textContent = "正在识别...";
-  try {
-    await loadAllDishes();
-    const imageResult = await recognizeImageTextInBrowser();
-    const combinedText = [text, imageResult.text].filter(Boolean).join("\n");
-    const items = recognizeDishesFromText(combinedText);
-    const matchedCount = items.filter((item) => item.imageUrl).length;
-    const ocrNotice = selectedRecognitionFile && !imageResult.text
-      ? (imageResult.supported ? " 图片文字没有识别出结果，可把菜单文字粘贴到输入框。" : " 当前浏览器不支持图片文字 OCR，可把菜单文字粘贴到输入框。")
-      : "";
-    renderRecognizedDishes(items);
-    recognitionMessage.textContent = items.length
-      ? `识别到 ${items.length} 个菜名，${matchedCount} 个已匹配图片。${ocrNotice}`
-      : `没有识别到菜名。${ocrNotice}`;
-  } catch (error) {
-    recognitionMessage.textContent = friendlyError(error);
-  } finally {
-    submitButton.disabled = false;
-  }
-}
-
 async function loadAdminDishes(name = "") {
   adminMessage.textContent = "正在加载菜品...";
   try {
-    const dishes = await fetchDishes(name);
+    const restaurantKey = document.querySelector("#adminRestaurantFilter").value;
+    const dishes = await fetchDishes(name, "", restaurantKey);
     document.querySelector("#adminCount").textContent = `${dishes.length} 条记录`;
-    renderCards(adminGrid, dishes, "还没有录入菜品。", { deleteButton: true });
+    renderCards(adminGrid, dishes, "还没有录入菜品。", { deleteButton: isAdmin() });
     adminMessage.textContent = dishes.length ? "数据已从 Supabase 加载。" : "";
   } catch (error) {
     adminGrid.innerHTML = "";
@@ -649,11 +502,11 @@ async function loadVoteDishes() {
   voteMessage.textContent = "正在加载菜品...";
   try {
     await loadVoteStatus();
-    const dishes = await attachTopComments(await fetchDishes(""));
+    const dishes = await attachTopComments(await fetchDishes("", "", voteRestaurant));
     renderVoteCards(dishes);
     voteMessage.textContent = dishes.length
       ? `今天已用 ${voteStatus.usedVotes} 票，每天最多 ${DAILY_VOTE_LIMIT} 票。`
-      : "还没有菜品，请先在后台录入。";
+      : `${restaurantLabel(voteRestaurant)}还没有菜品，请先在后台录入。`;
   } catch (error) {
     voteGrid.innerHTML = "";
     voteMessage.textContent = friendlyError(error);
@@ -703,7 +556,7 @@ function renderVoteCards(dishes) {
         voteStatus.usedVotes = row.usedVotes;
         voteStatus.remainingVotes = row.remainingVotes;
         updateVoteQuota();
-        renderVoteCards(await attachTopComments(await fetchDishes("")));
+        renderVoteCards(await attachTopComments(await fetchDishes("", "", voteRestaurant)));
       } catch (error) {
         voteMessage.textContent = friendlyError(error);
       } finally {
@@ -715,6 +568,14 @@ function renderVoteCards(dishes) {
   voteGrid.querySelectorAll(".comment-button").forEach((button) => {
     button.addEventListener("click", () => openCommentModal(button.dataset.id, button.dataset.name));
   });
+}
+
+function setVoteRestaurant(restaurantKey) {
+  voteRestaurant = restaurantKey;
+  document.querySelectorAll("[data-vote-restaurant]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.voteRestaurant === restaurantKey);
+  });
+  loadVoteDishes();
 }
 
 async function voteDish(id) {
@@ -814,100 +675,146 @@ async function closeCommentModal() {
   if (currentView === "vote") loadVoteDishes();
 }
 
-function renderSurveyOptions() {
-  const choices = readSurveyChoices();
-  for (const [surveyKey, survey] of Object.entries(surveys)) {
-    const target = document.querySelector(survey.optionsTarget);
-    if (!target) continue;
-    target.innerHTML = survey.options.map((option) => `
-      <label class="survey-option">
-        <input type="radio" name="${escapeHtml(surveyKey)}" value="${escapeHtml(option.key)}" ${choices[surveyKey] === option.key ? "checked" : ""} />
-        <span>${escapeHtml(option.label)}</span>
-      </label>`).join("");
-  }
+function normalizeDiscussionComment(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id || null,
+    content: row.content || "",
+    likeCount: Number(row.like_count || 0),
+    visitorKey: row.visitor_key || "",
+    createdAt: row.created_at || new Date().toISOString()
+  };
 }
 
-function selectedSurveyOption(surveyKey) {
-  return document.querySelector(`input[name="${surveyKey}"]:checked`)?.value || "";
-}
-
-function renderSurveyResults(surveyKey, rows) {
-  const survey = surveys[surveyKey];
-  const target = document.querySelector(survey.resultsTarget);
-  if (!target) return;
-  const counts = new Map((Array.isArray(rows) ? rows : []).map((row) => [row.option_key, Number(row.response_count || 0)]));
-  const total = Number((Array.isArray(rows) ? rows[0]?.total_count : 0) || [...counts.values()].reduce((sum, count) => sum + count, 0));
-  target.innerHTML = survey.options.map((option) => {
-    const count = counts.get(option.key) || 0;
-    const percent = total ? Math.round((count / total) * 100) : 0;
-    return `
-      <div class="survey-result-row">
-        <div class="survey-result-text">
-          <strong>${escapeHtml(option.label)}</strong>
-          <span>${count} 票 · ${percent}%</span>
+function discussionCommentHtml(comment, childrenMap, depth = 0) {
+  const children = childrenMap.get(comment.id) || [];
+  const dateText = new Date(comment.createdAt).toLocaleString("zh-CN", { hour12: false });
+  return `
+    <article class="discussion-comment${depth ? " discussion-reply" : ""}" data-discussion-id="${escapeHtml(comment.id)}">
+      <p>${escapeHtml(comment.content)}</p>
+      <div class="discussion-meta">
+        <time>${escapeHtml(dateText)}</time>
+        <div class="discussion-actions">
+          <button class="ghost discussion-like" type="button" data-id="${escapeHtml(comment.id)}">赞同 <strong data-discussion-like-count="${escapeHtml(comment.id)}">${comment.likeCount}</strong></button>
+          <button class="ghost discussion-reply-button" type="button" data-id="${escapeHtml(comment.id)}">回复</button>
         </div>
-        <div class="survey-bar"><span style="width: ${percent}%"></span></div>
-      </div>`;
-  }).join("");
+      </div>
+      <form class="discussion-reply-form hidden" data-parent-id="${escapeHtml(comment.id)}">
+        <textarea rows="2" maxlength="1000" placeholder="回复这条评论"></textarea>
+        <div class="compact-actions"><button class="primary" type="submit">提交回复</button><button class="secondary cancel-reply" type="button">取消</button></div>
+      </form>
+      ${children.length ? `<div class="discussion-children">${children.map((child) => discussionCommentHtml(child, childrenMap, depth + 1)).join("")}</div>` : ""}
+    </article>`;
 }
 
-async function loadSurveyResults(surveyKey) {
-  const rows = await supabaseFetch("rpc/get_survey_results", {
-    method: "POST",
-    body: JSON.stringify({ p_survey_key: surveyKey })
-  });
-  renderSurveyResults(surveyKey, rows);
-}
-
-async function submitSurvey(surveyKey, optionKey, comment, messageTarget) {
-  if (!optionKey) {
-    messageTarget.textContent = "请先选择一个选项。";
-    return;
+function renderDiscussionComments(comments) {
+  const childrenMap = new Map();
+  for (const comment of comments) {
+    const key = comment.parentId || "root";
+    const bucket = childrenMap.get(key) || [];
+    bucket.push(comment);
+    childrenMap.set(key, bucket);
   }
-  messageTarget.textContent = "正在提交...";
-  await supabaseFetch("rpc/submit_survey", {
+  const roots = (childrenMap.get("root") || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  document.querySelector("#discussionCount").textContent = `${roots.length} 条帖子`;
+  discussionList.innerHTML = roots.length
+    ? roots.map((comment) => discussionCommentHtml(comment, childrenMap)).join("")
+    : `<div class="empty-state">还没有人发表意见。</div>`;
+
+  discussionList.querySelectorAll(".discussion-like").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const rows = await supabaseFetch("rpc/like_discussion_comment", {
+          method: "POST",
+          body: JSON.stringify({ p_comment_id: button.dataset.id })
+        });
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        const target = row ? document.querySelector(`[data-discussion-like-count="${CSS.escape(row.id)}"]`) : null;
+        if (target) target.textContent = Number(row.like_count || 0);
+      } catch (error) {
+        discussionMessage.textContent = friendlyError(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  discussionList.querySelectorAll(".discussion-reply-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = button.closest(".discussion-comment").querySelector(":scope > .discussion-reply-form");
+      form.classList.toggle("hidden");
+      if (!form.classList.contains("hidden")) form.querySelector("textarea").focus();
+    });
+  });
+
+  discussionList.querySelectorAll(".cancel-reply").forEach((button) => {
+    button.addEventListener("click", () => button.closest("form").classList.add("hidden"));
+  });
+
+  discussionList.querySelectorAll(".discussion-reply-form").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const content = form.querySelector("textarea").value.trim();
+      if (!content) return;
+      const submit = form.querySelector("button[type='submit']");
+      submit.disabled = true;
+      try {
+        await addDiscussionComment(form.dataset.parentId, content);
+        discussionMessage.textContent = "回复已发布。";
+        await loadDiscussion();
+      } catch (error) {
+        discussionMessage.textContent = friendlyError(error);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  });
+}
+
+async function addDiscussionComment(parentId, content) {
+  return supabaseFetch("rpc/add_discussion_comment", {
     method: "POST",
     body: JSON.stringify({
-      p_survey_key: surveyKey,
-      p_option_key: optionKey,
-      p_comment: comment || "",
-      p_voter_key: getVisitorKey()
+      p_parent_id: parentId || null,
+      p_content: content.slice(0, 1000),
+      p_visitor_key: getVisitorKey()
     })
   });
-  rememberSurveyChoice(surveyKey, optionKey);
-  messageTarget.textContent = "已提交，重新提交会覆盖你之前的选择。";
-  await loadSurveyResults(surveyKey);
 }
 
-async function loadSurveyPage() {
-  renderSurveyOptions();
-  surveyMessage.textContent = "正在加载调查结果...";
+async function loadDiscussion() {
+  discussionMessage.textContent = "正在加载意见...";
   try {
-    await Promise.all([
-      loadSurveyResults("cafeteria_rating"),
-      loadSurveyResults("canteen_choice")
-    ]);
-    surveyMessage.textContent = "调查结果已更新。";
+    const rows = await supabaseFetch(`discussion_comments?select=${DISCUSSION_COLUMNS}&order=created_at.asc&limit=2000`);
+    renderDiscussionComments((Array.isArray(rows) ? rows : []).map(normalizeDiscussionComment));
+    discussionMessage.textContent = "";
   } catch (error) {
-    surveyMessage.textContent = friendlyError(error);
+    discussionList.innerHTML = "";
+    discussionMessage.textContent = friendlyError(error);
   }
 }
 
 async function loadRankingDishes() {
   rankMessage.textContent = "正在加载排行榜...";
   try {
-    const dishes = await fetchDishes("", "votes");
-    renderRanking(dishes);
+    const [hotbaoDishes, qilifangDishes] = await Promise.all([
+      fetchDishes("", "votes", "hotbao"),
+      fetchDishes("", "votes", "qilifang")
+    ]);
+    renderRanking(hotbaoRankList, hotbaoDishes, "hotbaoRankCount");
+    renderRanking(qilifangRankList, qilifangDishes, "qilifangRankCount");
+    rankMessage.textContent = "两家餐厅分别按投票数由高到低排序。";
   } catch (error) {
-    rankList.innerHTML = "";
+    hotbaoRankList.innerHTML = "";
+    qilifangRankList.innerHTML = "";
     rankMessage.textContent = friendlyError(error);
   }
 }
 
-function renderRanking(dishes) {
-  document.querySelector("#rankCount").textContent = `${dishes.length} 个菜品`;
-  rankMessage.textContent = dishes.length ? "按投票数由高到低排序。" : "";
-  rankList.innerHTML = dishes.length
+function renderRanking(target, dishes, countId) {
+  document.querySelector(`#${countId}`).textContent = `${dishes.length} 个菜品`;
+  target.innerHTML = dishes.length
     ? dishes.map((dish, index) => {
       const rank = index + 1;
       const isHot = rank <= 5;
@@ -929,10 +836,12 @@ function renderRanking(dishes) {
 }
 
 function ensureWeeklySlots(dayId, mealId) {
-  weeklyMenu[dayId] = weeklyMenu[dayId] || {};
-  const values = Array.isArray(weeklyMenu[dayId][mealId]) ? weeklyMenu[dayId][mealId] : [];
-  weeklyMenu[dayId][mealId] = Array.from({ length: WEEKLY_COLUMNS }, (_, index) => values[index] || "");
-  return weeklyMenu[dayId][mealId];
+  weeklyMenus[weeklyRestaurant] = weeklyMenus[weeklyRestaurant] || createEmptyWeeklyMenu();
+  const menu = weeklyMenus[weeklyRestaurant];
+  menu[dayId] = menu[dayId] || {};
+  const values = Array.isArray(menu[dayId][mealId]) ? menu[dayId][mealId] : [];
+  menu[dayId][mealId] = Array.from({ length: WEEKLY_COLUMNS }, (_, index) => values[index] || "");
+  return menu[dayId][mealId];
 }
 
 function createWeeklyForm() {
@@ -947,9 +856,18 @@ function setWeeklyMeal(mealId) {
   renderWeeklyTable();
 }
 
+function setWeeklyRestaurant(restaurantKey) {
+  weeklyRestaurant = restaurantKey;
+  document.querySelectorAll("[data-weekly-restaurant]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.weeklyRestaurant === restaurantKey);
+  });
+  renderWeeklyTable();
+  weeklyMessage.textContent = `当前显示${restaurantLabel(restaurantKey)}的一周菜单。`;
+}
+
 function renderWeeklyTable() {
   const meal = meals.find((item) => item.id === weeklyActiveMeal) || meals[0];
-  document.querySelector("#weeklyMealLabel").textContent = `当前编辑：${meal.label}`;
+  document.querySelector("#weeklyMealLabel").textContent = `当前编辑：${restaurantLabel(weeklyRestaurant)} · ${meal.label}`;
   weeklyTable.innerHTML = `
     <thead>
       <tr>
@@ -1314,7 +1232,7 @@ function renderWeeklyImportPreview(result) {
     return `<tr><th>${day.label}</th><th>${meal.label}</th><td>${content}</td><td>${result.coveredSlotKeys.has(key) ? "已识别" : "未识别"}</td></tr>`;
   })).join("");
   weeklyImportPreview.innerHTML = `
-    <div class="import-summary"><strong>${escapeHtml(result.fileName)}</strong><span>识别 ${dishCount} 个菜品，覆盖 ${result.coveredSlots.length} 个餐次</span></div>
+    <div class="import-summary"><strong>${escapeHtml(result.fileName)}</strong><span>将导入${restaurantLabel(weeklyRestaurant)} · 识别 ${dishCount} 个菜品，覆盖 ${result.coveredSlots.length} 个餐次</span></div>
     ${warning}
     <div class="weekly-import-table-wrap">
       <table class="weekly-import-table">
@@ -1392,14 +1310,14 @@ async function recognizeWeeklyImportFile(file) {
 
 function applyWeeklyImport() {
   if (!weeklyImportResult?.coveredSlots.length) return;
-  const nextMenu = normalizeWeeklyMenu(weeklyMenu);
+  const nextMenu = normalizeWeeklyMenu(weeklyMenus[weeklyRestaurant]);
   for (const slot of weeklyImportResult.coveredSlots) {
     nextMenu[slot.dayId][slot.mealId] = [...weeklyImportResult.menu[slot.dayId][slot.mealId]];
   }
-  weeklyMenu = nextMenu;
+  weeklyMenus[weeklyRestaurant] = nextMenu;
   renderWeeklyTable();
   weeklyImportModal.classList.add("hidden");
-  weeklyMessage.textContent = "识别结果已填入一周菜单，请检查后点击“保存一周菜单”。";
+  weeklyMessage.textContent = `识别结果已填入${restaurantLabel(weeklyRestaurant)}菜单，请检查后点击“保存一周菜单”。`;
 }
 
 function closeWeeklyImportModal() {
@@ -1416,21 +1334,27 @@ function closeWeeklyImportModal() {
 async function loadWeeklyMenu() {
   weeklyMessage.textContent = "正在加载一周菜单...";
   try {
-    const rows = await supabaseFetch("weekly_menu_items?select=id,weekday,meal_type,dish_id,dish_name,sort_order&order=weekday.asc,meal_type.asc,sort_order.asc&limit=1000");
-    const loaded = createEmptyWeeklyMenu();
-    for (const day of days) {
-      for (const meal of meals) loaded[day.id][meal.id] = [];
+    const rows = await supabaseFetch("weekly_menu_items?select=id,restaurant_key,weekday,meal_type,dish_id,dish_name,sort_order&order=restaurant_key.asc,weekday.asc,meal_type.asc,sort_order.asc&limit=2000");
+    const loaded = createEmptyWeeklyMenus();
+    for (const restaurant of restaurants) {
+      for (const day of days) {
+        for (const meal of meals) loaded[restaurant.id][day.id][meal.id] = [];
+      }
     }
     for (const row of Array.isArray(rows) ? rows : []) {
+      const restaurantKey = restaurants.some((item) => item.id === row.restaurant_key) ? row.restaurant_key : "hotbao";
       const day = days.find((item) => item.value === Number(row.weekday));
       const meal = meals.find((item) => item.id === row.meal_type);
-      if (day && meal && row.dish_name) loaded[day.id][meal.id][Number(row.sort_order || 0)] = row.dish_name;
+      if (day && meal && row.dish_name) loaded[restaurantKey][day.id][meal.id][Number(row.sort_order || 0)] = row.dish_name;
     }
-    weeklyMenu = normalizeWeeklyMenu(loaded);
+    weeklyMenus = Object.fromEntries(restaurants.map((restaurant) => [
+      restaurant.id,
+      normalizeWeeklyMenu(loaded[restaurant.id])
+    ]));
     createWeeklyForm();
-    weeklyMessage.textContent = "一周菜单已加载。";
+    weeklyMessage.textContent = `已加载${restaurantLabel(weeklyRestaurant)}的一周菜单。`;
   } catch (error) {
-    weeklyMenu = normalizeWeeklyMenu({});
+    weeklyMenus = createEmptyWeeklyMenus();
     createWeeklyForm();
     weeklyMessage.textContent = friendlyError(error);
   }
@@ -1442,7 +1366,7 @@ async function saveWeeklyMenu() {
   weeklyMessage.textContent = "正在保存...";
   try {
     await loadAllDishes();
-    const normalized = normalizeWeeklyMenu(weeklyMenu);
+    const normalized = normalizeWeeklyMenu(weeklyMenus[weeklyRestaurant]);
     const rows = [];
     for (const day of days) {
       for (const meal of meals) {
@@ -1450,8 +1374,9 @@ async function saveWeeklyMenu() {
           .map((name) => String(name || "").trim())
           .filter(Boolean)
           .forEach((name, index) => {
-            const matchedDish = findDishForName(name);
+            const matchedDish = findDishForName(name, weeklyRestaurant);
             rows.push({
+              restaurant_key: weeklyRestaurant,
               weekday: day.value,
               meal_type: meal.id,
               dish_id: matchedDish?.id || null,
@@ -1461,7 +1386,7 @@ async function saveWeeklyMenu() {
           });
       }
     }
-    await supabaseFetch("weekly_menu_items?weekday=gte.1", {
+    await supabaseFetch(`weekly_menu_items?restaurant_key=eq.${encodeURIComponent(weeklyRestaurant)}`, {
       method: "DELETE",
       headers: { Prefer: "return=minimal" }
     });
@@ -1472,9 +1397,9 @@ async function saveWeeklyMenu() {
         body: JSON.stringify(rows)
       });
     }
-    weeklyMenu = normalized;
+    weeklyMenus[weeklyRestaurant] = normalized;
     renderWeeklyTable();
-    weeklyMessage.textContent = "一周菜单已保存到 Supabase。";
+    weeklyMessage.textContent = `${restaurantLabel(weeklyRestaurant)}的一周菜单已保存到 Supabase。`;
   } catch (error) {
     weeklyMessage.textContent = friendlyError(error);
   } finally {
@@ -1491,14 +1416,17 @@ async function removeWeeklyMenuForDish(dish) {
   await supabaseFetch(`weekly_menu_items?dish_id=eq.${encodeURIComponent(dish.id)}`, requestOptions);
   if (dish.name) {
     await supabaseFetch(
-      `weekly_menu_items?dish_id=is.null&dish_name=eq.${encodeURIComponent(dish.name)}`,
+      `weekly_menu_items?dish_id=is.null&dish_name=eq.${encodeURIComponent(dish.name)}&restaurant_key=eq.${encodeURIComponent(dish.restaurantKey)}`,
       requestOptions
     );
   }
 }
 
-async function removeAllWeeklyMenuItems() {
-  await supabaseFetch("weekly_menu_items?weekday=gte.1", {
+async function removeAllWeeklyMenuItems(restaurantKey = "") {
+  const query = restaurantKey
+    ? `weekly_menu_items?restaurant_key=eq.${encodeURIComponent(restaurantKey)}`
+    : "weekly_menu_items?weekday=gte.1";
+  await supabaseFetch(query, {
     method: "DELETE",
     headers: { Prefer: "return=minimal" }
   });
@@ -1510,14 +1438,14 @@ async function clearWeeklyMenu() {
     return;
   }
   const button = document.querySelector("#clearWeeklyMenu");
-  if (!window.confirm("确认清空一周菜单吗？这只会删除周一至周五的早餐、午餐和晚餐安排，不会删除菜品库。")) return;
+  if (!window.confirm(`确认清空${restaurantLabel(weeklyRestaurant)}的一周菜单吗？这不会影响另一家食堂，也不会删除菜品库。`)) return;
   button.disabled = true;
   weeklyMessage.textContent = "正在清空一周菜单...";
   try {
-    await removeAllWeeklyMenuItems();
-    weeklyMenu = createEmptyWeeklyMenu();
+    await removeAllWeeklyMenuItems(weeklyRestaurant);
+    weeklyMenus[weeklyRestaurant] = createEmptyWeeklyMenu();
     renderWeeklyTable();
-    weeklyMessage.textContent = "一周菜单已清空。";
+    weeklyMessage.textContent = `${restaurantLabel(weeklyRestaurant)}的一周菜单已清空。`;
   } catch (error) {
     weeklyMessage.textContent = friendlyError(error);
   } finally {
@@ -1593,7 +1521,7 @@ async function removeDishImage(imagePath) {
   });
 }
 
-async function saveDishRecord(name, blob, mimeType) {
+async function saveDishRecord(name, blob, mimeType, restaurantKey) {
   const uploaded = await uploadDishImage(blob, mimeType);
   try {
     const rows = await supabaseFetch("dishes", {
@@ -1601,6 +1529,7 @@ async function saveDishRecord(name, blob, mimeType) {
       headers: { Prefer: "return=representation" },
       body: JSON.stringify({
         name: name.slice(0, 120),
+        restaurant_key: restaurantKey,
         image_url: uploaded.imageUrl,
         image_path: uploaded.imagePath,
         mime_type: mimeType,
@@ -1618,6 +1547,7 @@ async function createDish(event) {
   event.preventDefault();
   const submitButton = document.querySelector("#dishForm button[type='submit']");
   const name = document.querySelector("#dishName").value.trim().slice(0, 120);
+  const restaurantKey = document.querySelector("#dishRestaurant").value;
   if (!name || !selectedDishBlob) {
     adminMessage.textContent = "请填写菜名并选择图片。";
     return;
@@ -1625,7 +1555,7 @@ async function createDish(event) {
   submitButton.disabled = true;
   adminMessage.textContent = "正在上传图片...";
   try {
-    const created = await saveDishRecord(name, selectedDishBlob, selectedDishMimeType);
+    const created = await saveDishRecord(name, selectedDishBlob, selectedDishMimeType, restaurantKey);
     allDishes = [...created, ...allDishes];
     dishCacheTime = Date.now();
     adminMessage.textContent = "保存成功。";
@@ -1646,6 +1576,10 @@ async function createDish(event) {
 }
 
 async function deleteDish(id, button) {
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
   const dish = allDishes.find((item) => item.id === id);
   if (!dish) return;
   if (!window.confirm(`确认删除「${dish.name}」吗？`)) return;
@@ -1653,9 +1587,9 @@ async function deleteDish(id, button) {
   adminMessage.textContent = "正在删除菜品...";
   try {
     await removeWeeklyMenuForDish(dish);
-    await supabaseFetch(`dishes?id=eq.${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: { Prefer: "return=minimal" }
+    await supabaseFetch("rpc/admin_delete_dish", {
+      method: "POST",
+      body: JSON.stringify({ p_dish_id: id, p_admin_password: CONFIG.adminPassword })
     });
     if (dish.imagePath) {
       try { await removeDishImage(dish.imagePath); } catch {}
@@ -1689,9 +1623,9 @@ async function deleteAllDishes() {
   adminMessage.textContent = "正在一键删除全部菜品...";
   try {
     await removeAllWeeklyMenuItems();
-    await supabaseFetch("dishes?id=not.is.null", {
-      method: "DELETE",
-      headers: { Prefer: "return=minimal" }
+    await supabaseFetch("rpc/admin_delete_all_dishes", {
+      method: "POST",
+      body: JSON.stringify({ p_admin_password: CONFIG.adminPassword })
     });
     for (const dish of dishes) {
       if (dish.imagePath) {
@@ -1700,16 +1634,17 @@ async function deleteAllDishes() {
     }
     allDishes = [];
     dishCacheTime = Date.now();
-    weeklyMenu = createEmptyWeeklyMenu();
+    weeklyMenus = createEmptyWeeklyMenus();
     createWeeklyForm();
     voteStatus = { usedVotes: 0, remainingVotes: DAILY_VOTE_LIMIT, votedDishIds: new Set() };
     updateVoteQuota();
     await loadAdminDishes();
-    resultGrid.innerHTML = "";
     voteGrid.innerHTML = "";
-    rankList.innerHTML = "";
+    hotbaoRankList.innerHTML = "";
+    qilifangRankList.innerHTML = "";
     document.querySelector("#voteCount").textContent = "0 个菜品";
-    document.querySelector("#rankCount").textContent = "0 个菜品";
+    document.querySelector("#hotbaoRankCount").textContent = "0 个菜品";
+    document.querySelector("#qilifangRankCount").textContent = "0 个菜品";
     adminMessage.textContent = "全部菜品已删除。";
   } catch (error) {
     adminMessage.textContent = friendlyError(error);
@@ -1728,8 +1663,9 @@ function parseBulkDishNames(value) {
 
 function renderBulkUploadPreview() {
   const names = parseBulkDishNames(document.querySelector("#bulkDishNames").value);
+  const restaurantKey = document.querySelector("#bulkDishRestaurant").value;
   const target = document.querySelector("#bulkUploadPreview");
-  const countText = `已识别 ${names.length} 个菜名，已选择 ${bulkDishFiles.length} 张图片。`;
+  const countText = `${restaurantLabel(restaurantKey)}：已识别 ${names.length} 个菜名，已选择 ${bulkDishFiles.length} 张图片。`;
   const pairs = names.slice(0, 12).map((name, index) => {
     const file = bulkDishFiles[index];
     return `<span>${index + 1}. ${escapeHtml(name)}${file ? ` → ${escapeHtml(file.name)}` : " → 等待图片"}</span>`;
@@ -1746,6 +1682,7 @@ async function uploadBulkDishes(event) {
   const button = document.querySelector("#bulkDishForm button[type='submit']");
   const message = document.querySelector("#bulkUploadMessage");
   const names = parseBulkDishNames(document.querySelector("#bulkDishNames").value);
+  const restaurantKey = document.querySelector("#bulkDishRestaurant").value;
   if (!names.length || !bulkDishFiles.length) {
     message.textContent = "请先输入菜名并选择图片。";
     return;
@@ -1771,7 +1708,7 @@ async function uploadBulkDishes(event) {
       }
       message.textContent = `正在上传 ${index + 1}/${names.length}：${names[index]}`;
       const compressed = await compressImageFile(file);
-      const rows = await saveDishRecord(names[index], compressed.blob, compressed.mimeType);
+      const rows = await saveDishRecord(names[index], compressed.blob, compressed.mimeType, restaurantKey);
       created.push(...rows);
     }
     allDishes = [...created, ...allDishes];
@@ -1790,47 +1727,22 @@ async function uploadBulkDishes(event) {
 
 function showView(view) {
   currentView = view;
-  menuView.classList.toggle("hidden", view !== "menu");
   weekView.classList.toggle("hidden", view !== "week");
   voteView.classList.toggle("hidden", view !== "vote");
-  surveyView.classList.toggle("hidden", view !== "survey");
+  discussionView.classList.toggle("hidden", view !== "discussion");
   rankView.classList.toggle("hidden", view !== "rank");
   adminView.classList.toggle("hidden", view !== "admin");
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
-  if (view === "menu") searchDishes(document.querySelector("#searchInput").value.trim());
   if (view === "admin") loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
   if (view === "week") loadWeeklyMenu();
   if (view === "vote") loadVoteDishes();
-  if (view === "survey") loadSurveyPage();
+  if (view === "discussion") loadDiscussion();
   if (view === "rank") loadRankingDishes();
 }
 
 function bindEvents() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => showView(tab.dataset.view));
-  });
-
-  document.querySelector("#searchForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    searchDishes(document.querySelector("#searchInput").value.trim());
-  });
-
-  document.querySelector("#recognitionImage").addEventListener("change", (event) => {
-    selectedRecognitionFile = event.target.files[0] || null;
-    document.querySelector("#recognitionFileName").textContent = selectedRecognitionFile ? selectedRecognitionFile.name : "";
-  });
-
-  document.querySelector("#recognitionForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    recognizeMenuInput();
-  });
-
-  document.querySelector("#clearRecognition").addEventListener("click", () => {
-    selectedRecognitionFile = null;
-    document.querySelector("#recognitionForm").reset();
-    document.querySelector("#recognitionFileName").textContent = "";
-    recognitionMessage.textContent = "";
-    recognitionGrid.innerHTML = "";
   });
 
   document.querySelector("#adminSearchForm").addEventListener("submit", (event) => {
@@ -1841,6 +1753,9 @@ function bindEvents() {
   document.querySelector("#adminSearchInput").addEventListener("input", (event) => {
     clearTimeout(adminSearchTimer);
     adminSearchTimer = setTimeout(() => loadAdminDishes(event.target.value.trim()), 220);
+  });
+  document.querySelector("#adminRestaurantFilter").addEventListener("change", () => {
+    loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
   });
 
   document.querySelector("#clearAdminSearch").addEventListener("click", () => {
@@ -1891,6 +1806,7 @@ function bindEvents() {
   document.querySelector("#dishForm").addEventListener("submit", createDish);
 
   document.querySelector("#bulkDishNames").addEventListener("input", renderBulkUploadPreview);
+  document.querySelector("#bulkDishRestaurant").addEventListener("change", renderBulkUploadPreview);
   document.querySelector("#bulkDishImages").addEventListener("change", (event) => {
     bulkDishFiles = [...event.target.files];
     renderBulkUploadPreview();
@@ -1923,32 +1839,42 @@ function bindEvents() {
   document.querySelectorAll(".meal-tab").forEach((button) => {
     button.addEventListener("click", () => setWeeklyMeal(button.dataset.weeklyMeal));
   });
-
-  document.querySelector("#cafeteriaSurveyForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try {
-      await submitSurvey(
-        "cafeteria_rating",
-        selectedSurveyOption("cafeteria_rating"),
-        document.querySelector("#cafeteriaComment").value.trim(),
-        cafeteriaSurveyMessage
-      );
-    } catch (error) {
-      cafeteriaSurveyMessage.textContent = friendlyError(error);
-    }
+  document.querySelectorAll("[data-weekly-restaurant]").forEach((button) => {
+    button.addEventListener("click", () => setWeeklyRestaurant(button.dataset.weeklyRestaurant));
+  });
+  document.querySelectorAll("[data-vote-restaurant]").forEach((button) => {
+    button.addEventListener("click", () => setVoteRestaurant(button.dataset.voteRestaurant));
   });
 
-  document.querySelector("#canteenChoiceForm").addEventListener("submit", async (event) => {
+  document.querySelector("#openDiscussionComposer").addEventListener("click", () => {
+    document.querySelector("#discussionForm").classList.remove("hidden");
+    document.querySelector("#discussionInput").focus();
+  });
+  document.querySelector("#cancelDiscussionComposer").addEventListener("click", () => {
+    document.querySelector("#discussionForm").classList.add("hidden");
+    document.querySelector("#discussionInput").value = "";
+  });
+  document.querySelector("#discussionForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    const input = document.querySelector("#discussionInput");
+    const content = input.value.trim();
+    if (!content) {
+      discussionMessage.textContent = "请输入意见内容。";
+      return;
+    }
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true;
     try {
-      await submitSurvey(
-        "canteen_choice",
-        selectedSurveyOption("canteen_choice"),
-        "",
-        canteenChoiceMessage
-      );
+      await addDiscussionComment(null, content);
+      input.value = "";
+      form.classList.add("hidden");
+      await loadDiscussion();
+      discussionMessage.textContent = "意见已发布。";
     } catch (error) {
-      canteenChoiceMessage.textContent = friendlyError(error);
+      discussionMessage.textContent = friendlyError(error);
+    } finally {
+      button.disabled = false;
     }
   });
 
@@ -1985,7 +1911,7 @@ function bindEvents() {
 
   document.querySelector("#adminLogoutButton").addEventListener("click", () => {
     setAdmin(false);
-    if (currentView === "admin") showView("menu");
+    if (currentView === "admin") showView("vote");
   });
 
   document.addEventListener("keydown", (event) => {
@@ -1998,24 +1924,19 @@ function bindEvents() {
 }
 
 async function init() {
-  weeklyMenu = createEmptyWeeklyMenu();
+  weeklyMenus = createEmptyWeeklyMenus();
   bindEvents();
   updateAdminState();
-  renderSurveyOptions();
   renderBulkUploadPreview();
   createWeeklyForm();
   try {
     await loadAllDishes(true);
-    searchMessage.textContent = allDishes.length
-      ? `已连接 Supabase，共 ${allDishes.length} 个菜品。请输入菜名开始搜索。`
-      : "已连接 Supabase，目前还没有菜品。";
-    await Promise.all([loadWeeklyMenu(), loadVoteDishes(), loadRankingDishes()]);
+    await Promise.all([loadWeeklyMenu(), loadVoteDishes(), loadRankingDishes(), loadDiscussion()]);
   } catch (error) {
-    searchMessage.textContent = friendlyError(error);
     adminMessage.textContent = friendlyError(error);
     weeklyMessage.textContent = friendlyError(error);
     voteMessage.textContent = friendlyError(error);
-    surveyMessage.textContent = friendlyError(error);
+    discussionMessage.textContent = friendlyError(error);
     rankMessage.textContent = friendlyError(error);
   }
 }

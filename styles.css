@@ -19,7 +19,7 @@ body {
   background: #eef3f1;
   font: 15px/1.5 "Microsoft YaHei", "PingFang SC", sans-serif;
 }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 .hidden { display: none !important; }
 .eyebrow {
@@ -35,7 +35,7 @@ h2 { margin-bottom: 0; font-size: 25px; letter-spacing: 0; }
 h3 { margin: 0; font-size: 17px; }
 .muted, .hint, .message, .dish-info span { color: var(--muted); }
 label { display: grid; gap: 7px; color: #45515a; font-size: 13px; font-weight: 700; }
-input, textarea {
+input, textarea, select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -44,7 +44,7 @@ input, textarea {
   outline: none;
 }
 textarea { resize: vertical; }
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, .12);
 }
@@ -78,6 +78,7 @@ input:focus, textarea:focus {
   gap: 4px;
   overflow-x: auto;
 }
+.top-actions > button { flex: 0 0 auto; white-space: nowrap; }
 .tab {
   flex: 0 0 auto;
   padding: 7px 10px;
@@ -136,6 +137,15 @@ input:focus, textarea:focus {
 }
 .dish-info h3 { min-width: 0; overflow-wrap: anywhere; }
 .dish-info span { font-size: 12px; white-space: nowrap; }
+.dish-info > div { display: grid; gap: 5px; min-width: 0; }
+.restaurant-badge {
+  width: fit-content;
+  padding: 2px 6px;
+  background: #e9f3f0;
+  color: var(--accent-dark) !important;
+  font-size: 10px !important;
+  font-weight: 800;
+}
 .card-actions {
   display: flex;
   align-items: center;
@@ -145,56 +155,9 @@ input:focus, textarea:focus {
 }
 .card-actions .danger { padding: 7px 10px; font-size: 12px; }
 .card-actions span { color: var(--muted); font-size: 12px; }
-.recognition-panel, .admin-toolbar, .upload-form, .admin-status {
+.admin-toolbar, .upload-form, .admin-status {
   background: var(--white);
   border: 1px solid var(--line);
-}
-.recognition-panel { margin: 26px 0 14px; padding: 18px; }
-.recognition-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 250px;
-  gap: 14px;
-  align-items: end;
-}
-.recognition-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-.recognition-actions .message { min-height: auto; margin-bottom: 0; overflow-wrap: anywhere; }
-.recognition-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
-  gap: 14px;
-  margin-top: 12px;
-}
-.recognized-card {
-  overflow: hidden;
-  background: var(--white);
-  border: 1px solid var(--line);
-}
-.recognized-media {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1.1;
-  background: var(--soft);
-}
-.recognized-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.recognized-media.empty { border-bottom: 1px dashed #cbd5d2; }
-.recognized-info {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 11px;
-}
-.recognized-info h3 { min-width: 0; overflow-wrap: anywhere; font-size: 15px; }
-.recognized-info span {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
 }
 .vote-grid {
   display: grid;
@@ -295,14 +258,25 @@ input:focus, textarea:focus {
 }
 .section-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .quota-badge { background: #fff7ed; color: var(--danger); }
+.control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.control-label { color: var(--muted); font-size: 12px; font-weight: 800; }
+.restaurant-switcher,
 .meal-switcher {
   display: inline-flex;
   gap: 4px;
-  margin-bottom: 12px;
   padding: 4px;
   background: var(--white);
   border: 1px solid var(--line);
 }
+.restaurant-switcher { margin: 0; }
+.meal-switcher { margin-bottom: 12px; }
+.restaurant-tab,
 .meal-tab {
   border: 0;
   padding: 8px 16px;
@@ -310,6 +284,7 @@ input:focus, textarea:focus {
   color: var(--muted);
   font-weight: 800;
 }
+.restaurant-tab.active,
 .meal-tab.active { background: var(--accent); color: #fff; }
 .weekly-meal-label {
   margin-bottom: 10px;
@@ -394,43 +369,52 @@ input:focus, textarea:focus {
 .weekly-import-table td:last-child { width: 58px; color: var(--muted); white-space: nowrap; }
 .import-dish-tag { display: inline-block; margin: 0 5px 4px 0; padding: 3px 6px; background: #e9f3f0; color: var(--accent-dark); }
 .import-empty { color: #9aa6a7; }
-.survey-grid {
+.discussion-composer {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-.survey-panel {
-  display: grid;
-  gap: 16px;
-  padding: 20px;
+  gap: 12px;
+  max-width: 760px;
+  margin: 14px 0;
+  padding: 16px;
   background: var(--white);
   border: 1px solid var(--line);
 }
-.survey-heading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-.survey-form { display: grid; gap: 14px; }
-.survey-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-}
-.survey-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 11px;
-  background: var(--soft);
+.discussion-list { display: grid; gap: 12px; margin-top: 12px; }
+.discussion-comment {
+  min-width: 0;
+  padding: 14px;
+  background: var(--white);
   border: 1px solid var(--line);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 800;
 }
-.survey-option input { width: auto; }
-.survey-results { display: grid; gap: 10px; }
-.survey-result-row { display: grid; gap: 6px; }
-.survey-result-text { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
-.survey-result-text span { color: var(--muted); white-space: nowrap; }
-.survey-bar { height: 9px; overflow: hidden; background: #edf3f1; }
-.survey-bar span { display: block; height: 100%; background: var(--accent); }
+.discussion-comment > p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.discussion-reply { margin-top: 8px; padding: 11px; background: #f7faf9; }
+.discussion-children { margin: 10px 0 0 20px; border-left: 2px solid #dce7e4; padding-left: 10px; }
+.discussion-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; }
+.discussion-meta time { color: var(--muted); font-size: 11px; }
+.discussion-actions { display: flex; gap: 4px; }
+.discussion-actions button { padding: 5px 7px; font-size: 12px; }
+.discussion-actions strong { color: var(--accent-dark); }
+.discussion-reply-form { display: grid; gap: 8px; margin-top: 10px; }
+.compact-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.compact-actions button { padding: 7px 10px; }
+.ranking-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.ranking-column { min-width: 0; }
+.ranking-column-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: #e9f3f0;
+  border: 1px solid var(--line);
+}
+.ranking-column-heading h3 { color: var(--accent-dark); }
+.ranking-column-heading span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ranking-column .rank-row { grid-template-columns: 44px 76px minmax(0, 1fr) 58px; gap: 9px; padding: 10px; }
+.ranking-column .rank-row img,
+.ranking-column .rank-fallback { width: 76px; height: 62px; }
+.ranking-column .rank-number { font-size: 18px; }
+.ranking-column .rank-votes { font-size: 24px; }
 .admin-status {
   display: flex;
   justify-content: space-between;
@@ -632,11 +616,15 @@ input:focus, textarea:focus {
   .search-row, .section-heading, .admin-status { align-items: stretch; flex-direction: column; }
   .section-badges { justify-content: flex-start; }
   .content { width: min(100% - 28px, 1180px); padding-top: 28px; }
+  .top-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .top-actions > button { width: 100%; min-width: 0; padding: 7px 4px; font-size: 12px; }
   .search-form { width: 100%; flex-wrap: wrap; }
-  .recognition-fields { grid-template-columns: 1fr; }
-  .recognition-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .survey-grid { grid-template-columns: 1fr; }
+  .ranking-columns { grid-template-columns: 1fr; }
+  .discussion-children { margin-left: 8px; padding-left: 7px; }
+  .discussion-meta { align-items: flex-start; flex-direction: column; }
+  .restaurant-switcher, .meal-switcher { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; }
   .meal-switcher { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .restaurant-tab,
   .meal-tab { padding: 8px 10px; }
   .week-grid { grid-template-columns: 1fr; }
   .vote-card { grid-template-columns: 96px 1fr; }

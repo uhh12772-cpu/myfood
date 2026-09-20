@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>今日菜单 Supabase 版</title>
-    <link rel="stylesheet" href="styles.css?v=20260918" />
+    <title>WLSA 食堂菜品平台</title>
+    <link rel="stylesheet" href="styles.css?v=20260920-2" />
   </head>
   <body>
     <main id="app">
@@ -14,48 +14,14 @@
           <h1>菜单管理</h1>
         </div>
         <nav class="top-actions">
-          <button class="tab active" data-view="menu" type="button">今日菜单</button>
+          <button class="tab active" data-view="vote" type="button">菜品投票</button>
           <button class="tab" data-view="week" type="button">一周菜单</button>
-          <button class="tab" data-view="vote" type="button">菜品投票</button>
-          <button class="tab" data-view="survey" type="button">意见调查</button>
+          <button class="tab" data-view="discussion" type="button">意见交流</button>
           <button class="tab" data-view="rank" type="button">菜品排行榜</button>
           <button class="tab" data-view="admin" type="button">后台管理</button>
           <button id="adminLoginButton" class="ghost" type="button">管理员登录</button>
         </nav>
       </header>
-
-      <section id="menuView" class="content">
-        <div class="search-row">
-          <div>
-            <p class="eyebrow">MENU SEARCH</p>
-            <h2>输入菜名，找到对应图片</h2>
-          </div>
-          <form id="searchForm" class="search-form">
-            <input id="searchInput" placeholder="例如：宫保鸡丁" autocomplete="off" />
-            <button class="primary" type="submit">搜索</button>
-          </form>
-        </div>
-        <div id="searchMessage" class="message">正在连接 Supabase...</div>
-        <div id="resultGrid" class="result-grid"></div>
-
-        <form id="recognitionForm" class="recognition-panel">
-          <div class="recognition-fields">
-            <label>菜单文字
-              <textarea id="recognitionText" rows="3" placeholder="粘贴较长菜单文字，系统会自动提取菜名"></textarea>
-            </label>
-            <label>菜单图片
-              <input id="recognitionImage" type="file" accept="image/jpeg,image/png,image/webp" />
-            </label>
-          </div>
-          <div class="recognition-actions">
-            <button class="primary" type="submit">OCR/AI识别菜名</button>
-            <button id="clearRecognition" class="secondary" type="button">清空</button>
-            <span id="recognitionFileName" class="message"></span>
-          </div>
-        </form>
-        <div id="recognitionMessage" class="message"></div>
-        <div id="recognitionGrid" class="recognition-grid"></div>
-      </section>
 
       <section id="weekView" class="content hidden">
         <div class="section-heading">
@@ -69,6 +35,13 @@
           </div>
         </div>
         <form id="weeklyMenuForm">
+          <div class="control-row">
+            <span class="control-label">选择食堂</span>
+            <div class="restaurant-switcher" role="tablist" aria-label="一周菜单食堂">
+              <button class="restaurant-tab active" data-weekly-restaurant="hotbao" type="button">荷特宝</button>
+              <button class="restaurant-tab" data-weekly-restaurant="qilifang" type="button">七立方</button>
+            </div>
+          </div>
           <div class="meal-switcher" role="tablist" aria-label="选择餐次">
             <button class="meal-tab active" data-weekly-meal="breakfast" type="button">早餐</button>
             <button class="meal-tab" data-weekly-meal="lunch" type="button">午餐</button>
@@ -86,7 +59,7 @@
         </form>
       </section>
 
-      <section id="voteView" class="content hidden">
+      <section id="voteView" class="content">
         <div class="section-heading">
           <div>
             <p class="eyebrow">DISH VOTE</p>
@@ -97,53 +70,37 @@
             <span id="voteQuota" class="count-badge quota-badge">今日剩余 15 票</span>
           </div>
         </div>
+        <div class="control-row">
+          <span class="control-label">选择食堂</span>
+          <div class="restaurant-switcher" role="tablist" aria-label="菜品投票食堂">
+            <button class="restaurant-tab active" data-vote-restaurant="hotbao" type="button">荷特宝</button>
+            <button class="restaurant-tab" data-vote-restaurant="qilifang" type="button">七立方</button>
+          </div>
+        </div>
         <div id="voteMessage" class="message"></div>
         <div id="voteGrid" class="vote-grid"></div>
       </section>
 
-      <section id="surveyView" class="content hidden">
+      <section id="discussionView" class="content hidden">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">CANTEEN SURVEY</p>
-            <h2>意见调查</h2>
+            <p class="eyebrow">CANTEEN DISCUSSION</p>
+            <h2>食堂意见交流</h2>
           </div>
-          <span class="count-badge">每项调查可提交一次</span>
+          <span id="discussionCount" class="count-badge">0 条帖子</span>
         </div>
-        <div id="surveyMessage" class="message"></div>
-        <div class="survey-grid">
-          <section class="survey-panel">
-            <div class="survey-heading">
-              <div>
-                <h3>你对食堂整体有什么评价？</h3>
-                <p>请选择最符合你感受的一项，也可以补充建议。</p>
-              </div>
-            </div>
-            <form id="cafeteriaSurveyForm" class="survey-form">
-              <div id="cafeteriaOptions" class="survey-options"></div>
-              <label>补充意见（可选）
-                <textarea id="cafeteriaComment" rows="3" maxlength="500" placeholder="例如：希望增加哪些菜品或改进哪些服务？"></textarea>
-              </label>
-              <button class="primary" type="submit">提交食堂评价</button>
-            </form>
-            <div id="cafeteriaSurveyMessage" class="message"></div>
-            <div id="cafeteriaResults" class="survey-results"></div>
-          </section>
-
-          <section class="survey-panel">
-            <div class="survey-heading">
-              <div>
-                <h3>荷特宝 VS 七立方</h3>
-                <p>你更喜欢哪一家？</p>
-              </div>
-            </div>
-            <form id="canteenChoiceForm" class="survey-form">
-              <div id="canteenChoiceOptions" class="survey-options"></div>
-              <button class="primary" type="submit">提交选择</button>
-            </form>
-            <div id="canteenChoiceMessage" class="message"></div>
-            <div id="canteenChoiceResults" class="survey-results"></div>
-          </section>
-        </div>
+        <button id="openDiscussionComposer" class="primary" type="button">发表评论</button>
+        <form id="discussionForm" class="discussion-composer hidden">
+          <label>意见内容
+            <textarea id="discussionInput" rows="4" maxlength="1000" placeholder="说说你对食堂菜品、服务或安排的建议"></textarea>
+          </label>
+          <div class="form-actions compact-actions">
+            <button class="primary" type="submit">发布</button>
+            <button id="cancelDiscussionComposer" class="secondary" type="button">取消</button>
+          </div>
+        </form>
+        <div id="discussionMessage" class="message"></div>
+        <div id="discussionList" class="discussion-list"></div>
       </section>
 
       <section id="rankView" class="content hidden">
@@ -152,10 +109,19 @@
             <p class="eyebrow">DISH RANKING</p>
             <h2>菜品排行榜</h2>
           </div>
-          <span id="rankCount" class="count-badge">0 个菜品</span>
+          <span class="count-badge">按投票数排序</span>
         </div>
         <div id="rankMessage" class="message"></div>
-        <div id="rankList" class="rank-list"></div>
+        <div class="ranking-columns">
+          <section class="ranking-column">
+            <div class="ranking-column-heading"><h3>荷特宝餐厅</h3><span id="hotbaoRankCount">0 个菜品</span></div>
+            <div id="hotbaoRankList" class="rank-list"></div>
+          </section>
+          <section class="ranking-column">
+            <div class="ranking-column-heading"><h3>七立方餐厅</h3><span id="qilifangRankCount">0 个菜品</span></div>
+            <div id="qilifangRankList" class="rank-list"></div>
+          </section>
+        </div>
       </section>
 
       <section id="adminView" class="content hidden">
@@ -167,12 +133,17 @@
           <span id="adminCount" class="count-badge">0 条记录</span>
         </div>
         <div class="admin-status">
-          <span id="adminStatusText">开放维护模式：可以录入菜品、模糊搜索和单个删除；登录管理员后可批量上传和一键清空。</span>
+          <span id="adminStatusText">普通用户可以录入和搜索菜品；删除、批量上传和一键清空仅限管理员。</span>
           <button id="adminLogoutButton" class="secondary hidden" type="button">退出管理员</button>
         </div>
         <div class="admin-toolbar">
           <form id="adminSearchForm" class="search-form">
             <input id="adminSearchInput" placeholder="模糊搜索菜名" autocomplete="off" />
+            <select id="adminRestaurantFilter" aria-label="筛选食堂">
+              <option value="">全部食堂</option>
+              <option value="hotbao">荷特宝</option>
+              <option value="qilifang">七立方</option>
+            </select>
             <button class="primary" type="submit">搜索</button>
             <button id="clearAdminSearch" class="secondary" type="button">显示全部</button>
           </form>
@@ -188,6 +159,12 @@
           </div>
         </div>
         <form id="dishForm" class="upload-form">
+          <label>所属食堂
+            <select id="dishRestaurant" required>
+              <option value="hotbao">荷特宝</option>
+              <option value="qilifang">七立方</option>
+            </select>
+          </label>
           <label>菜名<input id="dishName" required placeholder="请输入菜名" maxlength="120" /></label>
           <label>菜品图片<input id="dishImage" type="file" accept="image/jpeg,image/png,image/webp" required /></label>
           <div id="imagePreview" class="preview empty">选择图片后预览</div>
@@ -202,6 +179,12 @@
             </div>
           </div>
           <form id="bulkDishForm" class="upload-form bulk-upload-form">
+            <label>本批菜品所属食堂
+              <select id="bulkDishRestaurant" required>
+                <option value="hotbao">荷特宝</option>
+                <option value="qilifang">七立方</option>
+              </select>
+            </label>
             <label>菜名
               <textarea id="bulkDishNames" rows="3" placeholder="按图片顺序输入菜名，用空格或换行分隔，例如：红烧肉 宫保鸡丁 番茄炒蛋"></textarea>
             </label>
@@ -279,6 +262,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20260918"></script>
+    <script src="app.js?v=20260920-3"></script>
   </body>
 </html>
