@@ -233,7 +233,7 @@ function friendlyError(error) {
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
   }
-  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|function .* does not exist|Could not find the function/i.test(message)) {
+  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|function .* does not exist|Could not find the function/i.test(message)) {
     return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
   }
   if (/get_vote_status/i.test(message)) {
@@ -1612,7 +1612,7 @@ async function deleteAllDishes() {
   button.disabled = true;
   adminMessage.textContent = "正在一键删除全部菜品...";
   try {
-    await supabaseFetch("rpc/admin_delete_all_dishes", {
+    await supabaseFetch("rpc/admin_clear_all_dishes", {
       method: "POST",
       body: JSON.stringify({ p_admin_password: CONFIG.adminPassword })
     });
