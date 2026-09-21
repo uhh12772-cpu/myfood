@@ -1407,21 +1407,6 @@ async function saveWeeklyMenu() {
   }
 }
 
-async function removeWeeklyMenuForDish(dish) {
-  if (!dish?.id) return;
-  const requestOptions = {
-    method: "DELETE",
-    headers: { Prefer: "return=minimal" }
-  };
-  await supabaseFetch(`weekly_menu_items?dish_id=eq.${encodeURIComponent(dish.id)}`, requestOptions);
-  if (dish.name) {
-    await supabaseFetch(
-      `weekly_menu_items?dish_id=is.null&dish_name=eq.${encodeURIComponent(dish.name)}&restaurant_key=eq.${encodeURIComponent(dish.restaurantKey)}`,
-      requestOptions
-    );
-  }
-}
-
 async function removeAllWeeklyMenuItems(restaurantKey = "") {
   const query = restaurantKey
     ? `weekly_menu_items?restaurant_key=eq.${encodeURIComponent(restaurantKey)}`
@@ -1586,7 +1571,6 @@ async function deleteDish(id, button) {
   button.disabled = true;
   adminMessage.textContent = "正在删除菜品...";
   try {
-    await removeWeeklyMenuForDish(dish);
     await supabaseFetch("rpc/admin_delete_dish", {
       method: "POST",
       body: JSON.stringify({ p_dish_id: id, p_admin_password: CONFIG.adminPassword })
@@ -1613,7 +1597,13 @@ async function deleteAllDishes() {
     return;
   }
   const button = document.querySelector("#deleteAllDishes");
-  const dishes = await loadAllDishes(true);
+  let dishes = [];
+  try {
+    dishes = await loadAllDishes(true);
+  } catch (error) {
+    adminMessage.textContent = friendlyError(error);
+    return;
+  }
   if (!dishes.length) {
     adminMessage.textContent = "当前没有菜品可删除。";
     return;
@@ -1622,7 +1612,6 @@ async function deleteAllDishes() {
   button.disabled = true;
   adminMessage.textContent = "正在一键删除全部菜品...";
   try {
-    await removeAllWeeklyMenuItems();
     await supabaseFetch("rpc/admin_delete_all_dishes", {
       method: "POST",
       body: JSON.stringify({ p_admin_password: CONFIG.adminPassword })
