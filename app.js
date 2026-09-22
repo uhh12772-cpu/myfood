@@ -211,6 +211,20 @@ function normalizeDish(row) {
   };
 }
 
+function dishUniquenessKey(dish) {
+  return `${dish.restaurantKey}::${String(dish.name || "").trim().toLocaleLowerCase("zh-CN")}`;
+}
+
+function countDuplicateDishes(dishes) {
+  const seen = new Set();
+  return dishes.reduce((count, dish) => {
+    const key = dishUniquenessKey(dish);
+    if (!key.endsWith("::") && seen.has(key)) return count + 1;
+    seen.add(key);
+    return count;
+  }, 0);
+}
+
 function normalizeComment(row) {
   return {
     id: row.id,
@@ -233,7 +247,10 @@ function friendlyError(error) {
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
   }
-  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|function .* does not exist|Could not find the function/i.test(message)) {
+  if (/dishes_restaurant_name_uq|duplicate key|unique constraint/i.test(message)) {
+    return "该食堂已经存在同名菜品，请更换菜名，或先使用“AI清除重复菜品”。";
+  }
+  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|admin_deduplicate|function .* does not exist|Could not find the function/i.test(message)) {
     return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
   }
   if (/get_vote_status/i.test(message)) {
@@ -1642,6 +1659,54 @@ async function deleteAllDishes() {
   }
 }
 
+async function deduplicateDishes() {
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
+  const button = document.querySelector("#deduplicateDishes");
+  let dishes = [];
+  try {
+    dishes = await loadAllDishes(true);
+  } catch (error) {
+    adminMessage.textContent = friendlyError(error);
+    return;
+  }
+  const duplicateCount = countDuplicateDishes(dishes);
+  if (!duplicateCount) {
+    adminMessage.textContent = "没有发现重复菜品。不同食堂的同名菜品会分别保留。";
+    return;
+  }
+  if (!window.confirm(`发现 ${duplicateCount} 个重复菜品。每个食堂只保留最早录入的一条，其余记录及其投票、评论将被删除，确认继续吗？`)) return;
+
+  button.disabled = true;
+  adminMessage.textContent = "正在检查并清除重复菜品...";
+  try {
+    const payload = await supabaseFetch("rpc/admin_deduplicate_dishes", {
+      method: "POST",
+      body: JSON.stringify({ p_admin_password: CONFIG.adminPassword })
+    });
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    const deletedCount = Number(row?.deleted_count || 0);
+    const imagePaths = Array.isArray(row?.deleted_image_paths) ? row.deleted_image_paths : [];
+    for (const imagePath of imagePaths) {
+      try { await removeDishImage(imagePath); } catch {}
+    }
+    await loadAllDishes(true);
+    await loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
+    if (currentView === "vote") await loadVoteDishes();
+    if (currentView === "rank") await loadRankingDishes();
+    if (currentView === "week") await loadWeeklyMenu();
+    adminMessage.textContent = deletedCount
+      ? `已清除 ${deletedCount} 个重复菜品，后续同一食堂不能再录入同名菜品。`
+      : "没有发现重复菜品。";
+  } catch (error) {
+    adminMessage.textContent = friendlyError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function parseBulkDishNames(value) {
   return String(value || "")
     .split(/[\s,，、;；]+/)
@@ -1753,6 +1818,7 @@ function bindEvents() {
   });
 
   document.querySelector("#deleteAllDishes").addEventListener("click", deleteAllDishes);
+  document.querySelector("#deduplicateDishes").addEventListener("click", deduplicateDishes);
 
   document.querySelector("#dishImage").addEventListener("change", async (event) => {
     selectedDishFile = event.target.files[0] || null;
