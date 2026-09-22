@@ -147,7 +147,10 @@
             <button class="primary" type="submit">搜索</button>
             <button id="clearAdminSearch" class="secondary" type="button">显示全部</button>
           </form>
-          <button id="deleteAllDishes" class="danger hidden" data-admin-only type="button">一键删除全部菜品</button>
+           <div class="admin-danger-actions">
+             <button id="deduplicateDishes" class="secondary hidden" data-admin-only type="button">AI清除重复菜品</button>
+             <button id="deleteAllDishes" class="danger hidden" data-admin-only type="button">一键删除全部菜品</button>
+           </div>
         </div>
         <div id="adminMessage" class="message"></div>
         <div id="adminGrid" class="result-grid admin-grid"></div>
@@ -262,6 +265,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20260921-2"></script>
+    <script src="app.js?v=20260922-1"></script>
   </body>
 </html>
