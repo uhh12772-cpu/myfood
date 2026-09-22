@@ -434,6 +434,7 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 22px;
   padding: 16px;
 }
+.admin-danger-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .sub-heading { margin-top: 58px; margin-bottom: 20px; }
 .upload-form { display: grid; gap: 16px; max-width: 620px; padding: 22px; }
 .bulk-upload-form { max-width: 820px; }
@@ -619,6 +620,8 @@ input:focus, textarea:focus, select:focus {
   .top-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
   .top-actions > button { width: 100%; min-width: 0; padding: 7px 4px; font-size: 12px; }
   .search-form { width: 100%; flex-wrap: wrap; }
+  .admin-danger-actions { justify-content: stretch; }
+  .admin-danger-actions button { flex: 1 1 180px; }
   .ranking-columns { grid-template-columns: 1fr; }
   .discussion-children { margin-left: 8px; padding-left: 7px; }
   .discussion-meta { align-items: flex-start; flex-direction: column; }
