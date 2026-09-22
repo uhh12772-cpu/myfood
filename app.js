@@ -156,11 +156,11 @@ function updateAdminState() {
   });
   if (isAdmin()) {
     adminLoginButton.textContent = "管理员已登录";
-    adminStatusText.textContent = "管理员模式已开启，可单个删除、批量上传和一键清空菜品。";
+    adminStatusText.textContent = "管理员模式已开启，可删除意见、单个删除、批量上传和一键清空菜品。";
     adminLogoutButton.classList.remove("hidden");
   } else {
     adminLoginButton.textContent = "管理员登录";
-    adminStatusText.textContent = "普通用户可以录入和搜索菜品；删除、批量上传和一键清空仅限管理员。";
+    adminStatusText.textContent = "普通用户可以录入和搜索菜品；删除意见、删除菜品、批量上传和一键清空仅限管理员。";
     adminLogoutButton.classList.add("hidden");
   }
 }
@@ -249,6 +249,9 @@ function friendlyError(error) {
   }
   if (/dishes_restaurant_name_uq|duplicate key|unique constraint/i.test(message)) {
     return "该食堂已经存在同名菜品，请更换菜名，或先使用“AI清除重复菜品”。";
+  }
+  if (/discussion_comment_likes|admin_delete_discussion_comment/i.test(message)) {
+    return "意见区点赞和管理员删除功能还没有升级，请先执行 new/supabase-discussion-update.sql。";
   }
   if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|admin_deduplicate|function .* does not exist|Could not find the function/i.test(message)) {
     return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
@@ -706,14 +709,18 @@ function normalizeDiscussionComment(row) {
 function discussionCommentHtml(comment, childrenMap, depth = 0) {
   const children = childrenMap.get(comment.id) || [];
   const dateText = new Date(comment.createdAt).toLocaleString("zh-CN", { hour12: false });
+  const adminDeleteButton = isAdmin()
+    ? `<button class="ghost discussion-delete" type="button" data-id="${escapeHtml(comment.id)}">删除</button>`
+    : "";
   return `
     <article class="discussion-comment${depth ? " discussion-reply" : ""}" data-discussion-id="${escapeHtml(comment.id)}">
       <p>${escapeHtml(comment.content)}</p>
       <div class="discussion-meta">
         <time>${escapeHtml(dateText)}</time>
         <div class="discussion-actions">
-          <button class="ghost discussion-like" type="button" data-id="${escapeHtml(comment.id)}">赞同 <strong data-discussion-like-count="${escapeHtml(comment.id)}">${comment.likeCount}</strong></button>
+          <button class="ghost discussion-like" type="button" data-id="${escapeHtml(comment.id)}" aria-label="赞同这条意见">赞同 <strong data-discussion-like-count="${escapeHtml(comment.id)}">${comment.likeCount}</strong></button>
           <button class="ghost discussion-reply-button" type="button" data-id="${escapeHtml(comment.id)}">回复</button>
+          ${adminDeleteButton}
         </div>
       </div>
       <form class="discussion-reply-form hidden" data-parent-id="${escapeHtml(comment.id)}">
@@ -744,17 +751,33 @@ function renderDiscussionComments(comments) {
       try {
         const rows = await supabaseFetch("rpc/like_discussion_comment", {
           method: "POST",
-          body: JSON.stringify({ p_comment_id: button.dataset.id })
+          body: JSON.stringify({
+            p_comment_id: button.dataset.id,
+            p_visitor_key: getVisitorKey()
+          })
         });
         const row = Array.isArray(rows) ? rows[0] : rows;
         const target = row ? document.querySelector(`[data-discussion-like-count="${CSS.escape(row.id)}"]`) : null;
         if (target) target.textContent = Number(row.like_count || 0);
+        button.classList.remove("like-pop");
+        void button.offsetWidth;
+        button.classList.add("like-pop");
+        button.disabled = true;
+        button.classList.add("liked");
+        button.setAttribute("aria-label", "今天已经赞同过这条意见");
+        discussionMessage.textContent = row?.already_liked
+          ? "今天已经赞同过这条意见。"
+          : "已赞同这条意见，今天不能重复点赞。";
       } catch (error) {
         discussionMessage.textContent = friendlyError(error);
       } finally {
-        button.disabled = false;
+        if (!button.classList.contains("liked")) button.disabled = false;
       }
     });
+  });
+
+  discussionList.querySelectorAll(".discussion-delete").forEach((button) => {
+    button.addEventListener("click", () => deleteDiscussionComment(button.dataset.id, button));
   });
 
   discussionList.querySelectorAll(".discussion-reply-button").forEach((button) => {
@@ -787,6 +810,27 @@ function renderDiscussionComments(comments) {
       }
     });
   });
+}
+
+async function deleteDiscussionComment(id, button) {
+  if (!isAdmin()) {
+    openAdminModal();
+    return;
+  }
+  if (!window.confirm("确认删除这条意见及其所有回复吗？")) return;
+  button.disabled = true;
+  discussionMessage.textContent = "正在删除意见...";
+  try {
+    await supabaseFetch("rpc/admin_delete_discussion_comment", {
+      method: "POST",
+      body: JSON.stringify({ p_comment_id: id, p_admin_password: CONFIG.adminPassword })
+    });
+    await loadDiscussion();
+    discussionMessage.textContent = "意见及其回复已删除。";
+  } catch (error) {
+    discussionMessage.textContent = friendlyError(error);
+    button.disabled = false;
+  }
 }
 
 async function addDiscussionComment(parentId, content) {
