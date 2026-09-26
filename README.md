@@ -11,6 +11,8 @@
 - `supabase-feature-update.sql`：投票限制、意见调查和多菜品周菜单的数据库升级脚本
 - `supabase-survey-fix.sql`：修复食堂评价提交函数字段名冲突
 - `supabase-restaurant-forum-update.sql`：荷特宝/七立方分类、帖子意见区和管理员删除权限升级脚本
+- `supabase-admin-delete-fix.sql`：修复管理员删除，并增加管理员清除重复菜品函数
+- `supabase-discussion-update.sql`：评论每日点赞限制和管理员删除意见函数
 - `tessdata/chi_sim.traineddata.gz`：随网站部署的简体中文 OCR 模型，避免运行时下载语言包卡住
 - `sync-existing-data.mjs`：把当前本地已有菜品和一周菜单同步到 Supabase
 
@@ -19,9 +21,11 @@
 1. 在 Supabase 的 SQL Editor 里执行 `supabase-direct-setup.sql`。
 2. 再执行 `supabase-feature-update.sql`。如果这两个脚本以前执行过，只需要重新执行第二个升级脚本。
 3. 最后执行 `supabase-restaurant-forum-update.sql`，创建餐厅标签、意见区和新的管理员删除函数。
-4. 确认 Storage 里存在 `dish-images` bucket，脚本会尝试创建并设置为公开。
-5. 把 `new` 目录里的文件上传到 GitHub 仓库。如果仓库根目录就是这个程序，需要把这些文件放到仓库根目录；如果放在 `/new` 子目录，需要用 `https://你的域名/new/` 访问。
-6. 如果要把本地已有数据补进 Supabase，先运行 `sync-existing-data.mjs`。
+4. 如果第 3 个脚本以前已经执行过，再执行更新后的 `supabase-admin-delete-fix.sql`，它会移除旧的同名唯一索引，并更新管理员删除和重复菜品清理函数。
+5. 再执行 `supabase-discussion-update.sql`，启用评论每天一次点赞和管理员删除意见。
+6. 确认 Storage 里存在 `dish-images` bucket，脚本会尝试创建并设置为公开。
+7. 把 `new` 目录里的文件上传到 GitHub 仓库。如果仓库根目录就是这个程序，需要把这些文件放到仓库根目录；如果放在 `/new` 子目录，需要用 `https://你的域名/new/` 访问。
+8. 如果要把本地已有数据补进 Supabase，先运行 `sync-existing-data.mjs`。
 
 ## 管理员
 
@@ -38,6 +42,7 @@
 
 - 每个浏览器会生成一个访客标识，用于限制同一浏览器每天最多 15 票、同一道菜每天 1 票；清除浏览器数据或更换设备会生成新的标识。
 - 菜品和一周菜单按 `hotbao`（荷特宝）与 `qilifang`（七立方）分开存储；投票和排行榜也按餐厅分别显示。升级前已有数据会默认归入荷特宝。
+- 菜品允许重复录入，管理员可以按需使用“AI清除重复菜品”。它按食堂分别检查同名菜品，优先保留投票数最高的记录；如果投票数相同，再比较评论点赞总数和评论数量，全部相同则保留较早录入的一条，删除其余菜品及相关投票、评论。清理后不会建立唯一约束，今后仍可继续上传同名菜品；两家不同食堂的同名菜品也会分别处理。
 - 原“今日菜单”页面已移除，菜品投票现在是首页。
 - 原“意见调查”已改成公开意见交流区，任何访问者都可以发帖、点赞和在评论下继续回复。
 - 删除菜品时会同步清理对应的周菜单记录、投票记录和评论；一键清空会清空全部菜品及相关周菜单。

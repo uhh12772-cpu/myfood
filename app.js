@@ -247,8 +247,11 @@ function friendlyError(error) {
   if (/image_blob|violates row-level security|row-level security|permission denied|storage/i.test(message)) {
     return "Supabase 权限或图片字段还没准备好，请先执行 new/supabase-direct-setup.sql。";
   }
-  if (/dishes_restaurant_name_uq|duplicate key|unique constraint/i.test(message)) {
-    return "该食堂已经存在同名菜品，请更换菜名，或先使用“AI清除重复菜品”。";
+  if (/dishes_restaurant_name_uq/i.test(message)) {
+    return "数据库还保留旧的同名唯一约束，请先执行更新后的管理员去重 SQL，之后即可重复上传菜品。";
+  }
+  if (/duplicate key|unique constraint/i.test(message)) {
+    return "菜品保存时遇到数据库约束，请刷新页面后重试；如仍失败，请检查 Supabase 升级脚本是否已执行。";
   }
   if (/discussion_comment_likes|admin_delete_discussion_comment/i.test(message)) {
     return "意见区点赞和管理员删除功能还没有升级，请先执行 new/supabase-discussion-update.sql。";
@@ -1721,7 +1724,7 @@ async function deduplicateDishes() {
     adminMessage.textContent = "没有发现重复菜品。不同食堂的同名菜品会分别保留。";
     return;
   }
-  if (!window.confirm(`发现 ${duplicateCount} 个重复菜品。每个食堂只保留最早录入的一条，其余记录及其投票、评论将被删除，确认继续吗？`)) return;
+  if (!window.confirm(`发现 ${duplicateCount} 个重复菜品。每个食堂会优先保留投票数最高的记录；如相同，再比较评论点赞总数和评论数量，最后保留较早录入的记录。其余记录及其投票、评论将被删除，确认继续吗？`)) return;
 
   button.disabled = true;
   adminMessage.textContent = "正在检查并清除重复菜品...";
@@ -1742,7 +1745,7 @@ async function deduplicateDishes() {
     if (currentView === "rank") await loadRankingDishes();
     if (currentView === "week") await loadWeeklyMenu();
     adminMessage.textContent = deletedCount
-      ? `已清除 ${deletedCount} 个重复菜品，后续同一食堂不能再录入同名菜品。`
+      ? `已清除 ${deletedCount} 个重复菜品，已按投票和评论热度保留代表菜品；今后仍可继续上传同名菜品。`
       : "没有发现重复菜品。";
   } catch (error) {
     adminMessage.textContent = friendlyError(error);
@@ -1789,12 +1792,6 @@ async function uploadBulkDishes(event) {
     message.textContent = `菜名数量和图片数量不一致：${names.length} 个菜名，${bulkDishFiles.length} 张图片。`;
     return;
   }
-  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
-  if (duplicates.length) {
-    message.textContent = `菜名重复：${[...new Set(duplicates)].join("、")}`;
-    return;
-  }
-
   button.disabled = true;
   message.textContent = "正在批量上传...";
   const created = [];
