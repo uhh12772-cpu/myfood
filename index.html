@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WLSA 食堂菜品平台</title>
-    <link rel="stylesheet" href="styles.css?v=20260923-1" />
+    <link rel="stylesheet" href="styles.css?v=20261007-2" />
   </head>
   <body>
     <main id="app">
@@ -109,7 +109,14 @@
             <p class="eyebrow">DISH RANKING</p>
             <h2>菜品排行榜</h2>
           </div>
-          <span class="count-badge">按投票数排序</span>
+          <div class="ranking-summary">
+            <span class="count-badge">按投票数排序</span>
+            <div class="ranking-statistics" aria-label="排行榜投票统计">
+              <div><span>总投票数</span><strong id="totalRankVotes">0</strong></div>
+              <div><span>荷特宝</span><strong id="hotbaoRankVotes">0</strong></div>
+              <div><span>七立方</span><strong id="qilifangRankVotes">0</strong></div>
+            </div>
+          </div>
         </div>
         <div id="rankMessage" class="message"></div>
         <div class="ranking-columns">
@@ -136,6 +143,22 @@
           <span id="adminStatusText">普通用户可以录入和搜索菜品；删除、批量上传和一键清空仅限管理员。</span>
           <button id="adminLogoutButton" class="secondary hidden" type="button">退出管理员</button>
         </div>
+        <section id="adminAnalytics" class="admin-analytics hidden" data-admin-only aria-labelledby="adminAnalyticsTitle">
+          <div class="admin-analytics-heading">
+            <div>
+              <p class="eyebrow">SITE ANALYTICS</p>
+              <h3 id="adminAnalyticsTitle">网站访问统计</h3>
+            </div>
+            <button id="refreshAdminAnalytics" class="secondary" type="button">刷新统计</button>
+          </div>
+          <div class="analytics-grid">
+            <div class="analytics-metric"><span>总点击数</span><strong id="totalPageClicks">0</strong></div>
+            <div class="analytics-metric"><span>移动端访问</span><strong id="mobileVisits">0</strong></div>
+            <div class="analytics-metric"><span>Web端访问</span><strong id="webVisits">0</strong></div>
+            <div class="analytics-metric analytics-total"><span>总点赞数</span><strong id="totalLikes">0</strong></div>
+          </div>
+          <div id="adminAnalyticsMessage" class="message analytics-message"></div>
+        </section>
         <div class="admin-toolbar">
           <form id="adminSearchForm" class="search-form">
             <input id="adminSearchInput" placeholder="模糊搜索菜名" autocomplete="off" />
@@ -265,6 +288,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20260926-1"></script>
+    <script src="app.js?v=20261007-2"></script>
   </body>
 </html>

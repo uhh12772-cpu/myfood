@@ -447,6 +447,27 @@ input:focus, textarea:focus, select:focus {
 .ranking-column .rank-fallback { width: 76px; height: 62px; }
 .ranking-column .rank-number { font-size: 18px; }
 .ranking-column .rank-votes { font-size: 24px; }
+.ranking-summary {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+.ranking-statistics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(112px, 1fr));
+  gap: 8px;
+}
+.ranking-statistics > div,
+.analytics-metric {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+}
+.ranking-statistics span,
+.analytics-metric span { color: var(--muted); font-size: 11px; }
+.ranking-statistics strong { color: var(--accent-dark); font-size: 20px; }
 .admin-status {
   display: flex;
   justify-content: space-between;
@@ -467,6 +488,33 @@ input:focus, textarea:focus, select:focus {
   padding: 16px;
 }
 .admin-danger-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.admin-analytics {
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+}
+.admin-analytics-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.admin-analytics-heading .eyebrow { margin-bottom: 2px; font-size: 10px; }
+.admin-analytics-heading h3 { font-size: 15px; }
+.admin-analytics-heading button { padding: 6px 9px; font-size: 12px; }
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.analytics-metric { gap: 0; padding: 6px 9px; }
+.analytics-metric span { font-size: 10px; }
+.analytics-metric strong { color: var(--ink); font-size: 19px; line-height: 1.25; }
+.analytics-total { border-color: rgba(15, 118, 110, .45); background: #edf7f4; }
+.analytics-total strong { color: var(--accent-dark); }
+.analytics-message { margin: 6px 0 0; min-height: 0; font-size: 11px; }
 .sub-heading { margin-top: 58px; margin-bottom: 20px; }
 .upload-form { display: grid; gap: 16px; max-width: 620px; padding: 22px; }
 .bulk-upload-form { max-width: 820px; }
@@ -655,6 +703,13 @@ input:focus, textarea:focus, select:focus {
   .admin-danger-actions { justify-content: stretch; }
   .admin-danger-actions button { flex: 1 1 180px; }
   .ranking-columns { grid-template-columns: 1fr; }
+  .ranking-summary { justify-items: stretch; width: 100%; }
+  .ranking-summary > .count-badge { width: fit-content; }
+  .ranking-statistics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ranking-statistics > div { min-width: 0; padding: 8px; }
+  .ranking-statistics span { overflow-wrap: anywhere; }
+  .admin-analytics-heading { align-items: center; }
+  .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .discussion-children { margin-left: 8px; padding-left: 7px; }
   .discussion-meta { align-items: flex-start; flex-direction: column; }
   .restaurant-switcher, .meal-switcher { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; }

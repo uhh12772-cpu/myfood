@@ -9,6 +9,7 @@ const CONFIG = {
 
 const ADMIN_STATE_KEY = "dish-menu-supabase-admin-v1";
 const VISITOR_KEY = "dish-menu-visitor-key-v1";
+const DEVICE_VISIT_SESSION_KEY = "dish-menu-device-visit-v1";
 const DISH_COLUMNS = "id,name,restaurant_key,image_url,image_path,mime_type,vote_count,created_at,updated_at";
 const COMMENT_COLUMNS = "id,dish_id,content,like_count,created_at,updated_at";
 const DISCUSSION_COLUMNS = "id,parent_id,content,like_count,visitor_key,created_at,updated_at";
@@ -40,6 +41,7 @@ const weeklyMessage = document.querySelector("#weeklyMessage");
 const voteMessage = document.querySelector("#voteMessage");
 const voteQuota = document.querySelector("#voteQuota");
 const rankMessage = document.querySelector("#rankMessage");
+const adminAnalyticsMessage = document.querySelector("#adminAnalyticsMessage");
 const imagePreview = document.querySelector("#imagePreview");
 const commentModal = document.querySelector("#commentModal");
 const commentTitle = document.querySelector("#commentTitle");
@@ -156,7 +158,7 @@ function updateAdminState() {
   });
   if (isAdmin()) {
     adminLoginButton.textContent = "管理员已登录";
-    adminStatusText.textContent = "管理员模式已开启，可删除意见、单个删除、批量上传和一键清空菜品。";
+    adminStatusText.textContent = "管理员模式已开启，可查看统计、删除意见、管理菜品和执行批量操作。";
     adminLogoutButton.classList.remove("hidden");
   } else {
     adminLoginButton.textContent = "管理员登录";
@@ -177,6 +179,74 @@ function getVisitorKey() {
     localStorage.setItem(VISITOR_KEY, key);
   }
   return key;
+}
+
+function formatCount(value) {
+  return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function detectDeviceType() {
+  const userAgent = navigator.userAgent || "";
+  const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(userAgent);
+  const compactTouchDevice = window.matchMedia?.("(pointer: coarse)").matches && window.innerWidth <= 1024;
+  return mobileUserAgent || compactTouchDevice ? "mobile" : "web";
+}
+
+async function recordPageClick(pageKey) {
+  try {
+    await supabaseFetch("rpc/record_page_click", {
+      method: "POST",
+      body: JSON.stringify({ p_page_key: pageKey })
+    });
+  } catch {
+    // Statistics must never block the page the visitor asked to open.
+  }
+}
+
+async function recordDeviceVisit() {
+  if (sessionStorage.getItem(DEVICE_VISIT_SESSION_KEY) === "yes") return;
+  try {
+    await supabaseFetch("rpc/record_device_visit", {
+      method: "POST",
+      body: JSON.stringify({ p_device_type: detectDeviceType() })
+    });
+    sessionStorage.setItem(DEVICE_VISIT_SESSION_KEY, "yes");
+  } catch {
+    // Leave the marker unset so setup failures can be retried on a later load.
+  }
+}
+
+function renderAdminAnalytics(row = {}) {
+  const values = {
+    totalPageClicks: row.total_page_clicks,
+    mobileVisits: row.mobile_visits,
+    webVisits: row.web_visits,
+    totalLikes: row.total_likes
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const target = document.querySelector(`#${id}`);
+    if (target) target.textContent = formatCount(value);
+  });
+}
+
+async function loadAdminAnalytics() {
+  if (!isAdmin()) return;
+  const refreshButton = document.querySelector("#refreshAdminAnalytics");
+  refreshButton.disabled = true;
+  adminAnalyticsMessage.textContent = "正在加载统计...";
+  try {
+    const payload = await supabaseFetch("rpc/get_admin_analytics", {
+      method: "POST",
+      body: JSON.stringify({ p_admin_password: CONFIG.adminPassword })
+    });
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    renderAdminAnalytics(row || {});
+    adminAnalyticsMessage.textContent = "统计数据已更新。";
+  } catch (error) {
+    adminAnalyticsMessage.textContent = friendlyError(error);
+  } finally {
+    refreshButton.disabled = false;
+  }
 }
 
 function openAdminModal() {
@@ -255,6 +325,9 @@ function friendlyError(error) {
   }
   if (/discussion_comment_likes|admin_delete_discussion_comment/i.test(message)) {
     return "意见区点赞和管理员删除功能还没有升级，请先执行 new/supabase-discussion-update.sql。";
+  }
+  if (/site_analytics|record_page_click|record_device_visit|get_admin_analytics/i.test(message)) {
+    return "网站统计功能还没有升级，请先执行 new/supabase-analytics-update.sql。";
   }
   if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|admin_deduplicate|function .* does not exist|Could not find the function/i.test(message)) {
     return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
@@ -862,18 +935,28 @@ async function loadDiscussion() {
 async function loadRankingDishes() {
   rankMessage.textContent = "正在加载排行榜...";
   try {
-    const [hotbaoDishes, qilifangDishes] = await Promise.all([
-      fetchDishes("", "votes", "hotbao"),
-      fetchDishes("", "votes", "qilifang")
-    ]);
+    await loadAllDishes(true);
+    const hotbaoDishes = filterDishes(allDishes, "", "votes", "hotbao");
+    const qilifangDishes = filterDishes(allDishes, "", "votes", "qilifang");
     renderRanking(hotbaoRankList, hotbaoDishes, "hotbaoRankCount");
     renderRanking(qilifangRankList, qilifangDishes, "qilifangRankCount");
+    updateRankingVoteStats(hotbaoDishes, qilifangDishes);
     rankMessage.textContent = "两家餐厅分别按投票数由高到低排序。";
   } catch (error) {
     hotbaoRankList.innerHTML = "";
     qilifangRankList.innerHTML = "";
+    updateRankingVoteStats([], []);
     rankMessage.textContent = friendlyError(error);
   }
+}
+
+function updateRankingVoteStats(hotbaoDishes, qilifangDishes) {
+  const sumVotes = (dishes) => dishes.reduce((total, dish) => total + Number(dish.voteCount || 0), 0);
+  const hotbaoVotes = sumVotes(hotbaoDishes);
+  const qilifangVotes = sumVotes(qilifangDishes);
+  document.querySelector("#totalRankVotes").textContent = formatCount(hotbaoVotes + qilifangVotes);
+  document.querySelector("#hotbaoRankVotes").textContent = formatCount(hotbaoVotes);
+  document.querySelector("#qilifangRankVotes").textContent = formatCount(qilifangVotes);
 }
 
 function renderRanking(target, dishes, countId) {
@@ -1698,6 +1781,7 @@ async function deleteAllDishes() {
     document.querySelector("#voteCount").textContent = "0 个菜品";
     document.querySelector("#hotbaoRankCount").textContent = "0 个菜品";
     document.querySelector("#qilifangRankCount").textContent = "0 个菜品";
+    updateRankingVoteStats([], []);
     adminMessage.textContent = "全部菜品已删除。";
   } catch (error) {
     adminMessage.textContent = friendlyError(error);
@@ -1828,7 +1912,11 @@ function showView(view) {
   rankView.classList.toggle("hidden", view !== "rank");
   adminView.classList.toggle("hidden", view !== "admin");
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
-  if (view === "admin") loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
+  const pageClickPromise = recordPageClick(view);
+  if (view === "admin") {
+    loadAdminDishes(document.querySelector("#adminSearchInput").value.trim());
+    if (isAdmin()) pageClickPromise.then(loadAdminAnalytics);
+  }
   if (view === "week") loadWeeklyMenu();
   if (view === "vote") loadVoteDishes();
   if (view === "discussion") loadDiscussion();
@@ -1860,6 +1948,7 @@ function bindEvents() {
 
   document.querySelector("#deleteAllDishes").addEventListener("click", deleteAllDishes);
   document.querySelector("#deduplicateDishes").addEventListener("click", deduplicateDishes);
+  document.querySelector("#refreshAdminAnalytics").addEventListener("click", loadAdminAnalytics);
 
   document.querySelector("#dishImage").addEventListener("change", async (event) => {
     selectedDishFile = event.target.files[0] || null;
@@ -2023,6 +2112,8 @@ async function init() {
   weeklyMenus = createEmptyWeeklyMenus();
   bindEvents();
   updateAdminState();
+  void recordDeviceVisit();
+  void recordPageClick(currentView);
   renderBulkUploadPreview();
   createWeeklyForm();
   try {
