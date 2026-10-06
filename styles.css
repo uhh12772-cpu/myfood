@@ -428,21 +428,30 @@ input:focus, textarea:focus, select:focus {
 .discussion-reply-form { display: grid; gap: 8px; margin-top: 10px; }
 .compact-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .compact-actions button { padding: 7px 10px; }
-.ranking-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+#rankView { padding-top: 18px; }
+.ranking-heading {
+  align-items: flex-start;
+  margin-bottom: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+#rankMessage { min-height: 0; margin-bottom: 10px; font-size: 12px; }
+.ranking-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .ranking-column { min-width: 0; }
 .ranking-column-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
-  padding: 10px 12px;
+  margin-bottom: 8px;
+  padding: 9px 11px;
   background: #e9f3f0;
   border: 1px solid var(--line);
 }
 .ranking-column-heading h3 { color: var(--accent-dark); }
 .ranking-column-heading span { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .ranking-column .rank-row { grid-template-columns: 44px 76px minmax(0, 1fr) 58px; gap: 9px; padding: 10px; }
+.ranking-column .rank-list { gap: 8px; }
 .ranking-column .rank-row img,
 .ranking-column .rank-fallback { width: 76px; height: 62px; }
 .ranking-column .rank-number { font-size: 18px; }
@@ -450,13 +459,15 @@ input:focus, textarea:focus, select:focus {
 .ranking-summary {
   display: grid;
   justify-items: end;
-  gap: 8px;
+  gap: 6px;
 }
 .ranking-statistics {
   display: grid;
   grid-template-columns: repeat(3, minmax(112px, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
+.ranking-summary > .count-badge { padding: 4px 8px; font-size: 12px; }
+.ranking-statistics > div { padding: 8px 10px; }
 .ranking-statistics > div,
 .analytics-metric {
   display: grid;
@@ -467,7 +478,7 @@ input:focus, textarea:focus, select:focus {
 }
 .ranking-statistics span,
 .analytics-metric span { color: var(--muted); font-size: 11px; }
-.ranking-statistics strong { color: var(--accent-dark); font-size: 20px; }
+.ranking-statistics strong { color: var(--accent-dark); font-size: 18px; line-height: 1.25; }
 .admin-status {
   display: flex;
   justify-content: space-between;
@@ -703,6 +714,8 @@ input:focus, textarea:focus, select:focus {
   .admin-danger-actions { justify-content: stretch; }
   .admin-danger-actions button { flex: 1 1 180px; }
   .ranking-columns { grid-template-columns: 1fr; }
+  #rankView { padding-top: 16px; }
+  #rankView .ranking-heading { align-items: stretch; gap: 14px; margin-bottom: 9px; padding-bottom: 10px; }
   .ranking-summary { justify-items: stretch; width: 100%; }
   .ranking-summary > .count-badge { width: fit-content; }
   .ranking-statistics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
