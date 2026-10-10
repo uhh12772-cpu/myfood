@@ -697,6 +697,7 @@ input:focus, textarea:focus, select:focus {
 }
 .comment-actions strong { color: var(--accent-dark); font-size: 16px; }
 .comment-like { padding: 6px 10px; }
+.dish-comment-delete { margin-left: auto; padding: 6px 10px; font-size: 12px; }
 .comment-input-label { margin-top: 10px; }
 
 @media (max-width: 1050px) {

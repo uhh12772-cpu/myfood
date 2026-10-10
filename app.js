@@ -323,6 +323,9 @@ function friendlyError(error) {
   if (/duplicate key|unique constraint/i.test(message)) {
     return "菜品保存时遇到数据库约束，请刷新页面后重试；如仍失败，请检查 Supabase 升级脚本是否已执行。";
   }
+  if (/admin_delete_dish_comment/i.test(message)) {
+    return "菜品评论管理员删除功能还没有升级，请先执行 new/supabase-dish-comment-admin-delete.sql。";
+  }
   if (/discussion_comment_likes|admin_delete_discussion_comment/i.test(message)) {
     return "意见区点赞和管理员删除功能还没有升级，请先执行 new/supabase-discussion-update.sql。";
   }
@@ -708,11 +711,12 @@ async function loadDishComments(dishId) {
 function renderComments(comments) {
   commentList.innerHTML = comments.length
     ? comments.map((comment) => `
-      <article class="comment-row">
+      <article class="comment-row" data-comment-id="${escapeHtml(comment.id)}">
         <p>${escapeHtml(comment.content)}</p>
         <div class="comment-actions">
           <span><strong data-comment-like="${escapeHtml(comment.id)}">${Number(comment.likeCount || 0)}</strong> 赞</span>
           <button class="secondary comment-like" type="button" data-id="${escapeHtml(comment.id)}">点赞</button>
+          ${isAdmin() ? `<button class="danger dish-comment-delete" type="button" data-id="${escapeHtml(comment.id)}">删除</button>` : ""}
         </div>
       </article>`).join("")
     : `<div class="empty-state">还没有评论。</div>`;
@@ -733,6 +737,32 @@ function renderComments(comments) {
         commentMessage.textContent = friendlyError(error);
       } finally {
         button.disabled = false;
+      }
+    });
+  });
+
+  commentList.querySelectorAll(".dish-comment-delete").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.disabled || !window.confirm("确定删除这条菜品评论吗？删除后无法恢复。")) return;
+      button.disabled = true;
+      const originalText = button.textContent;
+      button.textContent = "删除中...";
+      try {
+        const deleted = await supabaseFetch("rpc/admin_delete_dish_comment", {
+          method: "POST",
+          body: JSON.stringify({
+            p_comment_id: button.dataset.id,
+            p_admin_password: CONFIG.adminPassword
+          })
+        });
+        const result = Array.isArray(deleted) ? deleted[0] : deleted;
+        if (result === false) throw new Error("没有找到对应的菜品评论");
+        await loadDishComments(activeCommentDish?.id || "");
+        commentMessage.textContent = "评论已删除。";
+      } catch (error) {
+        commentMessage.textContent = friendlyError(error);
+        button.disabled = false;
+        button.textContent = originalText;
       }
     });
   });
