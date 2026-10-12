@@ -2,6 +2,10 @@
   "use strict";
 
   const REPORT_AUTHOR = "eva";
+  const REPORT_RESTAURANT_NAMES = {
+    hotbao: "303",
+    qilifang: "299"
+  };
   const REPORT_MONTHLY_TABLE = "report_monthly_metrics";
   const PDF_LIBRARIES = {
     html2canvas: "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js",
@@ -130,6 +134,12 @@
     if (/七立方|7立方|qilifang|qi.?li.?fang|seven|qlf/.test(text)) return "七立方";
     if (/荷特宝|hetebao|hotebao|hotbao|he.?te.?bao|htb/.test(text)) return "荷特宝";
     return normalizeText(value);
+  }
+
+  function reportRestaurantName(value) {
+    const text = normalizeText(value).toLowerCase();
+    if (/七立方|7立方|299|qilifang|qi.?li.?fang|seven|qlf/.test(text)) return REPORT_RESTAURANT_NAMES.qilifang;
+    return REPORT_RESTAURANT_NAMES.hotbao;
   }
 
   function isTopLevelPost(row) {
@@ -1573,6 +1583,193 @@
       }
       .template-forum-actions { color: #587081; }
       .template-empty { color: #788a92; font-size: 18px; text-align: center; padding-top: 160px; }
+      .template-restaurant-title {
+        position: absolute;
+        top: 48px;
+        left: 28px;
+        color: #f58c44;
+        font-size: 36px;
+        font-weight: 900;
+        line-height: 1;
+        text-shadow: 2px 2px 0 #ffe1c9, 4px 4px 0 rgba(245, 140, 68, .22);
+      }
+      .template-restaurant-title.qilifang {
+        color: #2ab7b0;
+        text-shadow: 2px 2px 0 #d4e9e7, 4px 4px 0 rgba(42, 183, 176, .2);
+      }
+      .template-restaurant-title span:last-child {
+        margin-left: 16px;
+        color: #2f454a;
+        font-size: 27px;
+        text-shadow: none;
+      }
+      .template-restaurant-board {
+        position: absolute;
+        top: 101px;
+        right: 25px;
+        bottom: 31px;
+        left: 25px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+        gap: 22px;
+      }
+      .template-restaurant-panel {
+        min-width: 0;
+        padding: 0 10px 8px;
+        background: rgba(255, 255, 255, .45);
+      }
+      .template-restaurant-panel.comment-panel {
+        border-left: 1px solid #dce7e5;
+        padding-left: 21px;
+      }
+      .template-restaurant-panel-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        height: 45px;
+        border-bottom: 2px solid #f2b17f;
+        color: #f58c44;
+      }
+      .template-restaurant-panel.qilifang .template-restaurant-panel-heading {
+        border-bottom-color: #75d3cd;
+        color: #2ab7b0;
+      }
+      .template-restaurant-panel-heading strong {
+        font-size: 27px;
+        font-weight: 900;
+        line-height: 45px;
+      }
+      .template-restaurant-panel-heading span {
+        color: #71858b;
+        font-size: 13px;
+      }
+      .template-restaurant-list {
+        display: grid;
+        grid-template-rows: repeat(10, 1fr);
+        height: 548px;
+      }
+      .template-restaurant-comment-list {
+        display: grid;
+        grid-template-rows: repeat(8, 1fr);
+        height: 548px;
+      }
+      .template-restaurant-red-row {
+        display: grid;
+        grid-template-columns: 38px 82px minmax(0, 1fr) 62px;
+        gap: 9px;
+        align-items: center;
+        min-height: 0;
+        padding: 4px 0;
+        border-bottom: 1px solid #e5e9e8;
+      }
+      .template-restaurant-rank {
+        color: #2a7773;
+        font-size: 17px;
+        font-weight: 900;
+        text-align: center;
+      }
+      .template-restaurant-rank.is-top { color: #e57c43; }
+      .template-restaurant-red-image,
+      .template-restaurant-red-placeholder {
+        width: 80px;
+        height: 48px;
+        object-fit: cover;
+        background: #f0f3f4;
+        box-shadow: 0 3px 9px rgba(45, 61, 65, .13);
+      }
+      .template-restaurant-red-placeholder,
+      .template-restaurant-comment-placeholder {
+        display: grid;
+        place-items: center;
+        color: #839196;
+        font-size: 10px;
+      }
+      .template-restaurant-dish-name {
+        overflow: hidden;
+        color: #111;
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .template-restaurant-review {
+        overflow: hidden;
+        margin-top: 3px;
+        color: #718087;
+        font-size: 11px;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .template-restaurant-counts {
+        color: #7a898e;
+        font-size: 10px;
+        line-height: 1.35;
+        text-align: right;
+        white-space: nowrap;
+      }
+      .template-restaurant-counts strong {
+        display: block;
+        color: #287a75;
+        font-size: 16px;
+      }
+      .template-restaurant-comment-row {
+        display: grid;
+        grid-template-columns: 70px minmax(0, 1fr) 42px;
+        gap: 9px;
+        align-items: center;
+        min-height: 0;
+        padding: 6px 0;
+        border-bottom: 1px solid #e5e9e8;
+      }
+      .template-restaurant-comment-image,
+      .template-restaurant-comment-placeholder {
+        width: 68px;
+        height: 52px;
+        object-fit: cover;
+        background: #f0f3f4;
+        box-shadow: 0 3px 9px rgba(45, 61, 65, .13);
+      }
+      .template-restaurant-comment-name {
+        overflow: hidden;
+        color: #111;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .template-restaurant-comment-review {
+        overflow: hidden;
+        margin-top: 4px;
+        color: #4c5e63;
+        font-size: 13px;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .template-restaurant-comment-likes {
+        color: #72858a;
+        font-size: 10px;
+        text-align: right;
+      }
+      .template-restaurant-comment-likes strong {
+        display: block;
+        color: #3e6d70;
+        font-size: 15px;
+      }
+      .template-restaurant-empty {
+        display: grid;
+        place-items: center;
+        height: 548px;
+        color: #7f8d91;
+        font-size: 15px;
+      }
+      .template-restaurant-list > .template-restaurant-empty,
+      .template-restaurant-comment-list > .template-restaurant-empty {
+        grid-row: 1 / -1;
+      }
     `;
   }
 
@@ -1667,6 +1864,61 @@
       </section>`;
   }
 
+  function templateRestaurantRedRow(dish, index) {
+    const item = dish || { name: "", imageUrl: "", review: "", votes: 0, likes: 0 };
+    const review = item.review ? `评价：${item.review}` : "暂无评价";
+    return `
+      <article class="template-restaurant-red-row">
+        <div class="template-restaurant-rank ${index < 3 ? "is-top" : ""}">${String(index + 1).padStart(2, "0")}</div>
+        ${templateImageMarkup(item, "template-restaurant-red-image", "template-restaurant-red-placeholder")}
+        <div>
+          <div class="template-restaurant-dish-name">${escapeHtml(item.name || "待补充")}</div>
+          <div class="template-restaurant-review">${escapeHtml(review)}</div>
+        </div>
+        <div class="template-restaurant-counts"><strong>${formatNumber(item.votes)}</strong>票<br>赞 ${formatNumber(item.likes)}</div>
+      </article>`;
+  }
+
+  function templateRestaurantCommentRow(dish) {
+    const item = dish || { name: "", imageUrl: "", review: "", reviewLikes: 0 };
+    return `
+      <article class="template-restaurant-comment-row">
+        ${templateImageMarkup(item, "template-restaurant-comment-image", "template-restaurant-comment-placeholder")}
+        <div>
+          <div class="template-restaurant-comment-name">${escapeHtml(item.name || "未命名菜品")}</div>
+          <div class="template-restaurant-comment-review">${escapeHtml(item.review || "暂无评价")}</div>
+        </div>
+        <div class="template-restaurant-comment-likes"><strong>${formatNumber(item.reviewLikes)}</strong>赞</div>
+      </article>`;
+  }
+
+  function templateRestaurantPage(data, restaurant, dishes, comments, pageNumber) {
+    const displayName = reportRestaurantName(restaurant);
+    const className = restaurant === "qilifang" ? "qilifang" : "hotbao";
+    const rankingRows = dishes.slice(0, 10).map(templateRestaurantRedRow).join("");
+    const commentRows = comments.slice(0, 8).map(templateRestaurantCommentRow).join("");
+    return `
+      <section class="template-report-page">
+        ${templateHeader(`${displayName}  红榜与吐槽榜`, data)}
+        <div class="template-restaurant-title ${className}"><span>${displayName}</span><span>红榜 + 吐槽榜</span></div>
+        <div class="template-restaurant-board">
+          <section class="template-restaurant-panel ${className}">
+            <div class="template-restaurant-panel-heading"><strong>${displayName} 红榜</strong><span>投票数 TOP 10</span></div>
+            <div class="template-restaurant-list">
+              ${rankingRows || `<div class="template-restaurant-empty">暂无带投票数的菜品数据</div>`}
+            </div>
+          </section>
+          <section class="template-restaurant-panel comment-panel ${className}">
+            <div class="template-restaurant-panel-heading"><strong>${displayName} 吐槽榜</strong><span>高赞评价 TOP 8</span></div>
+            <div class="template-restaurant-comment-list">
+              ${commentRows || `<div class="template-restaurant-empty">暂无可展示的菜品评价</div>`}
+            </div>
+          </section>
+        </div>
+        ${templateFooter(data)}
+      </section>`;
+  }
+
   function templateCombinedCommentPage(data) {
     return `
       <section class="template-report-page">
@@ -1712,9 +1964,8 @@
 
     const pages = document.createElement("div");
     pages.innerHTML = [
-      templateRedPage(data, "荷特宝", data.hetebao || [], 1),
-      templateRedPage(data, "七立方", data.qilifang || [], 2),
-      templateCombinedCommentPage(data),
+      templateRestaurantPage(data, "hotbao", data.hetebao || [], data.hotbaoComments || [], 1),
+      templateRestaurantPage(data, "qilifang", data.qilifang || [], data.qilifangComments || [], 2),
       templateDiscussionPage(data)
     ].join("");
     root.appendChild(pages);
@@ -1909,8 +2160,8 @@
       const data = await collectReportData(monthly);
       if (!data.hetebao.length || !data.qilifang.length) {
         const missing = [
-          !data.hetebao.length ? "荷特宝" : "",
-          !data.qilifang.length ? "七立方" : ""
+          !data.hetebao.length ? "303" : "",
+          !data.qilifang.length ? "299" : ""
         ].filter(Boolean).join("、");
         throw new Error(`未读取到${missing}排行榜，请先打开一次“菜品排行榜”页面，确认榜单显示后重试`);
       }
@@ -1935,6 +2186,7 @@
     const button = document.createElement("button");
     button.type = "button";
     button.className = `${target.className || ""} report-action-button${monthly ? " is-monthly" : ""}`.trim();
+    button.dataset.adminOnly = "";
     button.dataset.reportAction = monthly ? "monthly" : "total";
     button.title = monthly ? "生成并下载本月食堂评价榜 PDF" : "生成并下载全部数据食堂评价榜 PDF";
     button.innerHTML = `<i data-lucide="${monthly ? "calendar-range" : "file-chart-column"}" aria-hidden="true"></i><span>${monthly ? "当月报表" : "报表生成"}</span>`;

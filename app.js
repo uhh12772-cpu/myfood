@@ -71,8 +71,8 @@ let activeCommentDish = null;
 let currentView = "vote";
 
 const restaurants = [
-  { id: "hotbao", label: "荷特宝" },
-  { id: "qilifang", label: "七立方" }
+  { id: "hotbao", label: "303荷特宝" },
+  { id: "qilifang", label: "299七立方" }
 ];
 
 const days = [
@@ -130,7 +130,7 @@ function createEmptyWeeklyMenus() {
 }
 
 function restaurantLabel(restaurantKey) {
-  return restaurants.find((restaurant) => restaurant.id === restaurantKey)?.label || "荷特宝";
+  return restaurants.find((restaurant) => restaurant.id === restaurantKey)?.label || "303荷特宝";
 }
 
 function normalizeForDishMatch(value) {

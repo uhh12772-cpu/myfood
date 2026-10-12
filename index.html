@@ -38,8 +38,8 @@
           <div class="control-row">
             <span class="control-label">选择食堂</span>
             <div class="restaurant-switcher" role="tablist" aria-label="一周菜单食堂">
-              <button class="restaurant-tab active" data-weekly-restaurant="hotbao" type="button">荷特宝</button>
-              <button class="restaurant-tab" data-weekly-restaurant="qilifang" type="button">七立方</button>
+              <button class="restaurant-tab active" data-weekly-restaurant="hotbao" type="button">303荷特宝</button>
+              <button class="restaurant-tab" data-weekly-restaurant="qilifang" type="button">299七立方</button>
             </div>
           </div>
           <div class="meal-switcher" role="tablist" aria-label="选择餐次">
@@ -73,8 +73,8 @@
         <div class="control-row">
           <span class="control-label">选择食堂</span>
           <div class="restaurant-switcher" role="tablist" aria-label="菜品投票食堂">
-            <button class="restaurant-tab active" data-vote-restaurant="hotbao" type="button">荷特宝</button>
-            <button class="restaurant-tab" data-vote-restaurant="qilifang" type="button">七立方</button>
+            <button class="restaurant-tab active" data-vote-restaurant="hotbao" type="button">303荷特宝</button>
+            <button class="restaurant-tab" data-vote-restaurant="qilifang" type="button">299七立方</button>
           </div>
         </div>
         <div id="voteMessage" class="message"></div>
@@ -113,19 +113,19 @@
             <span class="count-badge">按投票数排序</span>
             <div class="ranking-statistics" aria-label="排行榜投票统计">
               <div><span>总投票数</span><strong id="totalRankVotes">0</strong></div>
-              <div><span>荷特宝</span><strong id="hotbaoRankVotes">0</strong></div>
-              <div><span>七立方</span><strong id="qilifangRankVotes">0</strong></div>
+              <div><span>303荷特宝</span><strong id="hotbaoRankVotes">0</strong></div>
+              <div><span>299七立方</span><strong id="qilifangRankVotes">0</strong></div>
             </div>
           </div>
         </div>
         <div id="rankMessage" class="message"></div>
         <div class="ranking-columns">
           <section class="ranking-column">
-            <div class="ranking-column-heading"><h3>荷特宝餐厅</h3><span id="hotbaoRankCount">0 个菜品</span></div>
+            <div class="ranking-column-heading"><h3>303荷特宝餐厅</h3><span id="hotbaoRankCount">0 个菜品</span></div>
             <div id="hotbaoRankList" class="rank-list"></div>
           </section>
           <section class="ranking-column">
-            <div class="ranking-column-heading"><h3>七立方餐厅</h3><span id="qilifangRankCount">0 个菜品</span></div>
+            <div class="ranking-column-heading"><h3>299七立方餐厅</h3><span id="qilifangRankCount">0 个菜品</span></div>
             <div id="qilifangRankList" class="rank-list"></div>
           </section>
         </div>
@@ -164,8 +164,8 @@
             <input id="adminSearchInput" placeholder="模糊搜索菜名" autocomplete="off" />
             <select id="adminRestaurantFilter" aria-label="筛选食堂">
               <option value="">全部食堂</option>
-              <option value="hotbao">荷特宝</option>
-              <option value="qilifang">七立方</option>
+              <option value="hotbao">303荷特宝</option>
+              <option value="qilifang">299七立方</option>
             </select>
             <button class="primary" type="submit">搜索</button>
             <button id="clearAdminSearch" class="secondary" type="button">显示全部</button>
@@ -187,8 +187,8 @@
         <form id="dishForm" class="upload-form">
           <label>所属食堂
             <select id="dishRestaurant" required>
-              <option value="hotbao">荷特宝</option>
-              <option value="qilifang">七立方</option>
+              <option value="hotbao">303荷特宝</option>
+              <option value="qilifang">299七立方</option>
             </select>
           </label>
           <label>菜名<input id="dishName" required placeholder="请输入菜名" maxlength="120" /></label>
@@ -207,8 +207,8 @@
           <form id="bulkDishForm" class="upload-form bulk-upload-form">
             <label>本批菜品所属食堂
               <select id="bulkDishRestaurant" required>
-                <option value="hotbao">荷特宝</option>
-                <option value="qilifang">七立方</option>
+                <option value="hotbao">303荷特宝</option>
+                <option value="qilifang">299七立方</option>
               </select>
             </label>
             <label>菜名
@@ -288,7 +288,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20261010-3"></script>
-  <script src="report-generator.js?v=20261010-24"></script>
+    <script src="app.js?v=20261012-2"></script>
+  <script src="report-generator.js?v=20261012-4"></script>
 </body>
 </html>
