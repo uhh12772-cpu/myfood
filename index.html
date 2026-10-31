@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WLSA 食堂菜品平台</title>
-    <link rel="stylesheet" href="styles.css?v=20261007-3" />
+    <link rel="stylesheet" href="styles.css?v=20261101-1" />
   </head>
   <body>
     <main id="app">
@@ -110,7 +110,13 @@
             <h2>菜品排行榜</h2>
           </div>
           <div class="ranking-summary">
-            <span class="count-badge">按投票数排序</span>
+            <div class="ranking-mode-row">
+              <div class="ranking-mode-switch" role="tablist" aria-label="排行榜时间范围">
+                <button class="ranking-mode-button active" data-ranking-mode="biweekly" type="button" role="tab" aria-selected="true">双周排行榜</button>
+                <button class="ranking-mode-button" data-ranking-mode="total" type="button" role="tab" aria-selected="false">总排行榜</button>
+              </div>
+              <span id="rankingPeriod" class="ranking-period">双周周期：正在计算...</span>
+            </div>
             <div class="ranking-statistics" aria-label="排行榜投票统计">
               <div><span>总投票数</span><strong id="totalRankVotes">0</strong></div>
               <div><span>303荷特宝</span><strong id="hotbaoRankVotes">0</strong></div>
@@ -288,7 +294,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20261012-2"></script>
+    <script src="app.js?v=20261101-1"></script>
   <script src="report-generator.js?v=20261012-4"></script>
 </body>
 </html>

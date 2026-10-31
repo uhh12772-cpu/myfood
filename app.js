@@ -69,6 +69,8 @@ let voteRestaurant = "hotbao";
 let adminSearchTimer = null;
 let activeCommentDish = null;
 let currentView = "vote";
+let rankingMode = "biweekly";
+let rankingLoadRunId = 0;
 
 const restaurants = [
   { id: "hotbao", label: "303荷特宝" },
@@ -332,11 +334,14 @@ function friendlyError(error) {
   if (/site_analytics|record_page_click|record_device_visit|get_admin_analytics/i.test(message)) {
     return "网站统计功能还没有升级，请先执行 new/supabase-analytics-update.sql。";
   }
-  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|admin_deduplicate|function .* does not exist|Could not find the function/i.test(message)) {
-    return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
+  if (/get_biweekly_dish_ranking/i.test(message)) {
+    return "双周排行榜数据库函数还没创建，请先执行 new/supabase-biweekly-ranking.sql。";
   }
   if (/get_vote_status/i.test(message)) {
     return "Supabase 投票函数还没创建，请先执行 new/supabase-feature-update.sql。";
+  }
+  if (/discussion_comments|add_discussion_comment|like_discussion_comment|restaurant_key|admin_delete|admin_clear|admin_deduplicate|function .* does not exist|Could not find the function/i.test(message)) {
+    return "Supabase 餐厅分类和意见区还没升级，请先执行 new/supabase-restaurant-forum-update.sql。";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
     return "连接 Supabase 失败，请检查网络、Project URL、anon key 和 Supabase 项目状态。";
@@ -963,33 +968,106 @@ async function loadDiscussion() {
 }
 
 async function loadRankingDishes() {
+  const runId = ++rankingLoadRunId;
   rankMessage.textContent = "正在加载排行榜...";
   try {
-    await loadAllDishes(true);
-    const hotbaoDishes = filterDishes(allDishes, "", "votes", "hotbao");
-    const qilifangDishes = filterDishes(allDishes, "", "votes", "qilifang");
-    renderRanking(hotbaoRankList, hotbaoDishes, "hotbaoRankCount");
-    renderRanking(qilifangRankList, qilifangDishes, "qilifangRankCount");
-    updateRankingVoteStats(hotbaoDishes, qilifangDishes);
-    rankMessage.textContent = "两家餐厅分别按投票数由高到低排序。";
+    if (rankingMode === "biweekly") {
+      const payload = await supabaseFetch("rpc/get_biweekly_dish_ranking", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      if (runId !== rankingLoadRunId) return;
+      const data = Array.isArray(payload) ? payload[0] || {} : payload || {};
+      const rankings = Array.isArray(data.rankings) ? data.rankings.map(normalizeDish) : [];
+      const hotbaoDishes = rankings.filter((dish) => dish.restaurantKey === "hotbao");
+      const qilifangDishes = rankings.filter((dish) => dish.restaurantKey === "qilifang");
+      renderRanking(hotbaoRankList, hotbaoDishes, "hotbaoRankCount", "最近两周暂无投票数据。");
+      renderRanking(qilifangRankList, qilifangDishes, "qilifangRankCount", "最近两周暂无投票数据。");
+      updateRankingVoteStats(hotbaoDishes, qilifangDishes, {
+        totalVotes: data.total_votes,
+        hotbaoVotes: data.hotbao_votes,
+        qilifangVotes: data.qilifang_votes
+      });
+      updateRankingPeriod(data.start_date, data.end_date);
+    } else {
+      await loadAllDishes(true);
+      if (runId !== rankingLoadRunId) return;
+      const hotbaoDishes = filterDishes(allDishes, "", "votes", "hotbao");
+      const qilifangDishes = filterDishes(allDishes, "", "votes", "qilifang");
+      renderRanking(hotbaoRankList, hotbaoDishes, "hotbaoRankCount");
+      renderRanking(qilifangRankList, qilifangDishes, "qilifangRankCount");
+      updateRankingVoteStats(hotbaoDishes, qilifangDishes);
+      updateRankingPeriod();
+    }
+    rankMessage.textContent = "";
   } catch (error) {
+    if (runId !== rankingLoadRunId) return;
     hotbaoRankList.innerHTML = "";
     qilifangRankList.innerHTML = "";
     updateRankingVoteStats([], []);
+    updateRankingPeriod();
     rankMessage.textContent = friendlyError(error);
   }
 }
 
-function updateRankingVoteStats(hotbaoDishes, qilifangDishes) {
+function getShanghaiDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { year: Number(values.year), month: Number(values.month), day: Number(values.day) };
+}
+
+function fallbackBiweeklyPeriod() {
+  const current = getShanghaiDateParts();
+  const end = new Date(Date.UTC(current.year, current.month - 1, current.day));
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 13);
+  const toIsoDate = (date) => [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
+  return { startDate: toIsoDate(start), endDate: toIsoDate(end) };
+}
+
+function formatShortDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  return match ? `${Number(match[2])}月${Number(match[3])}日` : "";
+}
+
+function updateRankingPeriod(startDate = "", endDate = "") {
+  const fallback = fallbackBiweeklyPeriod();
+  const start = startDate || fallback.startDate;
+  const end = endDate || fallback.endDate;
+  document.querySelector("#rankingPeriod").textContent = `双周周期：${formatShortDate(start)} - ${formatShortDate(end)}`;
+}
+
+function setRankingMode(mode) {
+  if (!["biweekly", "total"].includes(mode) || mode === rankingMode) return;
+  rankingMode = mode;
+  document.querySelectorAll("[data-ranking-mode]").forEach((button) => {
+    const active = button.dataset.rankingMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  loadRankingDishes();
+}
+
+function updateRankingVoteStats(hotbaoDishes, qilifangDishes, summary = null) {
   const sumVotes = (dishes) => dishes.reduce((total, dish) => total + Number(dish.voteCount || 0), 0);
-  const hotbaoVotes = sumVotes(hotbaoDishes);
-  const qilifangVotes = sumVotes(qilifangDishes);
-  document.querySelector("#totalRankVotes").textContent = formatCount(hotbaoVotes + qilifangVotes);
+  const hotbaoVotes = summary ? Number(summary.hotbaoVotes || 0) : sumVotes(hotbaoDishes);
+  const qilifangVotes = summary ? Number(summary.qilifangVotes || 0) : sumVotes(qilifangDishes);
+  const totalVotes = summary ? Number(summary.totalVotes || 0) : hotbaoVotes + qilifangVotes;
+  document.querySelector("#totalRankVotes").textContent = formatCount(totalVotes);
   document.querySelector("#hotbaoRankVotes").textContent = formatCount(hotbaoVotes);
   document.querySelector("#qilifangRankVotes").textContent = formatCount(qilifangVotes);
 }
 
-function renderRanking(target, dishes, countId) {
+function renderRanking(target, dishes, countId, emptyText = "还没有菜品，请先在后台录入。") {
   document.querySelector(`#${countId}`).textContent = `${dishes.length} 个菜品`;
   target.innerHTML = dishes.length
     ? dishes.map((dish, index) => {
@@ -1009,7 +1087,7 @@ function renderRanking(target, dishes, countId) {
           <div class="rank-votes">${Number(dish.voteCount || 0)}</div>
         </article>`;
     }).join("")
-    : `<div class="empty-state">还没有菜品，请先在后台录入。</div>`;
+    : `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
 }
 
 function ensureWeeklySlots(dayId, mealId) {
@@ -2060,6 +2138,9 @@ function bindEvents() {
   document.querySelectorAll("[data-vote-restaurant]").forEach((button) => {
     button.addEventListener("click", () => setVoteRestaurant(button.dataset.voteRestaurant));
   });
+  document.querySelectorAll("[data-ranking-mode]").forEach((button) => {
+    button.addEventListener("click", () => setRankingMode(button.dataset.rankingMode));
+  });
 
   document.querySelector("#openDiscussionComposer").addEventListener("click", () => {
     document.querySelector("#discussionForm").classList.remove("hidden");
@@ -2146,6 +2227,7 @@ async function init() {
   void recordPageClick(currentView);
   renderBulkUploadPreview();
   createWeeklyForm();
+  updateRankingPeriod();
   try {
     await loadAllDishes(true);
     await Promise.all([loadWeeklyMenu(), loadVoteDishes(), loadRankingDishes(), loadDiscussion()]);

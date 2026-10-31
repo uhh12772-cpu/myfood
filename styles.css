@@ -461,12 +461,43 @@ input:focus, textarea:focus, select:focus {
   justify-items: end;
   gap: 6px;
 }
+.ranking-mode-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.ranking-mode-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: #eef3f1;
+  border: 1px solid var(--line);
+}
+.ranking-mode-button {
+  border: 0;
+  padding: 6px 11px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.ranking-mode-button:hover { color: var(--accent-dark); }
+.ranking-mode-button.active {
+  background: var(--accent);
+  color: #fff;
+}
+.ranking-period {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .ranking-statistics {
   display: grid;
   grid-template-columns: repeat(3, minmax(112px, 1fr));
   gap: 6px;
 }
-.ranking-summary > .count-badge { padding: 4px 8px; font-size: 12px; }
 .ranking-statistics > div { padding: 8px 10px; }
 .ranking-statistics > div,
 .analytics-metric {
@@ -718,7 +749,9 @@ input:focus, textarea:focus, select:focus {
   #rankView { padding-top: 16px; }
   #rankView .ranking-heading { align-items: stretch; gap: 14px; margin-bottom: 9px; padding-bottom: 10px; }
   .ranking-summary { justify-items: stretch; width: 100%; }
-  .ranking-summary > .count-badge { width: fit-content; }
+  .ranking-mode-row { justify-content: flex-start; flex-wrap: wrap; }
+  .ranking-mode-switch { flex: 0 0 auto; }
+  .ranking-period { white-space: normal; }
   .ranking-statistics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ranking-statistics > div { min-width: 0; padding: 8px; }
   .ranking-statistics span { overflow-wrap: anywhere; }
