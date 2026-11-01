@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WLSA 食堂菜品平台</title>
-    <link rel="stylesheet" href="styles.css?v=20261101-1" />
+    <link rel="stylesheet" href="styles.css?v=20261101-2" />
   </head>
   <body>
     <main id="app">
@@ -91,9 +91,19 @@
         </div>
         <button id="openDiscussionComposer" class="primary" type="button">发表评论</button>
         <form id="discussionForm" class="discussion-composer hidden">
-          <label>意见内容
-            <textarea id="discussionInput" rows="4" maxlength="1000" placeholder="说说你对食堂菜品、服务或安排的建议"></textarea>
-          </label>
+          <div class="discussion-composer-row">
+            <label class="discussion-content-field">意见内容
+              <textarea id="discussionInput" rows="4" maxlength="1000" placeholder="说说你对食堂菜品、服务或安排的建议"></textarea>
+            </label>
+            <fieldset class="discussion-scope-fieldset">
+              <legend>选择标签</legend>
+              <div class="discussion-scope-options">
+                <label><input type="radio" name="discussionScope" value="hotbao" required />303荷特宝</label>
+                <label><input type="radio" name="discussionScope" value="qilifang" />299七立方</label>
+                <label><input type="radio" name="discussionScope" value="both" />两者皆有</label>
+              </div>
+            </fieldset>
+          </div>
           <div class="form-actions compact-actions">
             <button class="primary" type="submit">发布</button>
             <button id="cancelDiscussionComposer" class="secondary" type="button">取消</button>
@@ -294,7 +304,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js?v=20261101-1"></script>
+    <script src="app.js?v=20261101-2"></script>
   <script src="report-generator.js?v=20261012-4"></script>
 </body>
 </html>

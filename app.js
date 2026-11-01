@@ -12,7 +12,8 @@ const VISITOR_KEY = "dish-menu-visitor-key-v1";
 const DEVICE_VISIT_SESSION_KEY = "dish-menu-device-visit-v1";
 const DISH_COLUMNS = "id,name,restaurant_key,image_url,image_path,mime_type,vote_count,created_at,updated_at";
 const COMMENT_COLUMNS = "id,dish_id,content,like_count,created_at,updated_at";
-const DISCUSSION_COLUMNS = "id,parent_id,content,like_count,visitor_key,created_at,updated_at";
+const DISCUSSION_COLUMNS = "id,parent_id,content,restaurant_scope,like_count,visitor_key,created_at,updated_at";
+const DISCUSSION_LEGACY_COLUMNS = "id,parent_id,content,like_count,visitor_key,created_at,updated_at";
 const DISH_CACHE_MS = 12000;
 const DAILY_VOTE_LIMIT = 15;
 const WEEKLY_COLUMNS = 16;
@@ -333,6 +334,9 @@ function friendlyError(error) {
   }
   if (/site_analytics|record_page_click|record_device_visit|get_admin_analytics/i.test(message)) {
     return "网站统计功能还没有升级，请先执行 new/supabase-analytics-update.sql。";
+  }
+  if (/restaurant_scope|p_restaurant_scope/i.test(message)) {
+    return "意见交流餐厅标签还没有升级，请先执行 new/supabase-discussion-tags.sql。";
   }
   if (/get_biweekly_dish_ranking/i.test(message)) {
     return "双周排行榜数据库函数还没创建，请先执行 new/supabase-biweekly-ranking.sql。";
@@ -811,10 +815,39 @@ function normalizeDiscussionComment(row) {
     id: row.id,
     parentId: row.parent_id || null,
     content: row.content || "",
+    restaurantScope: normalizeDiscussionScope(row.restaurant_scope),
     likeCount: Number(row.like_count || 0),
     visitorKey: row.visitor_key || "",
     createdAt: row.created_at || new Date().toISOString()
   };
+}
+
+function normalizeDiscussionScope(value) {
+  return ["hotbao", "qilifang", "both"].includes(value) ? value : "both";
+}
+
+function discussionTagsHtml(scopeValue) {
+  const scope = normalizeDiscussionScope(scopeValue);
+  const tags = [];
+  if (scope === "hotbao" || scope === "both") {
+    tags.push('<span class="discussion-tag">303荷特宝</span>');
+  }
+  if (scope === "qilifang" || scope === "both") {
+    tags.push('<span class="discussion-tag discussion-tag-qilifang">299七立方</span>');
+  }
+  return `<div class="discussion-tags" aria-label="意见标签">${tags.join("")}</div>`;
+}
+
+function discussionScopeOptionsHtml(name) {
+  return `
+    <fieldset class="discussion-scope-fieldset">
+      <legend>选择标签</legend>
+      <div class="discussion-scope-options">
+        <label><input type="radio" name="${escapeHtml(name)}" value="hotbao" required />303荷特宝</label>
+        <label><input type="radio" name="${escapeHtml(name)}" value="qilifang" />299七立方</label>
+        <label><input type="radio" name="${escapeHtml(name)}" value="both" />两者皆有</label>
+      </div>
+    </fieldset>`;
 }
 
 function discussionCommentHtml(comment, childrenMap, depth = 0) {
@@ -825,7 +858,10 @@ function discussionCommentHtml(comment, childrenMap, depth = 0) {
     : "";
   return `
     <article class="discussion-comment${depth ? " discussion-reply" : ""}" data-discussion-id="${escapeHtml(comment.id)}">
-      <p>${escapeHtml(comment.content)}</p>
+      <div class="discussion-content-row">
+        <p>${escapeHtml(comment.content)}</p>
+        ${discussionTagsHtml(comment.restaurantScope)}
+      </div>
       <div class="discussion-meta">
         <time>${escapeHtml(dateText)}</time>
         <div class="discussion-actions">
@@ -836,6 +872,7 @@ function discussionCommentHtml(comment, childrenMap, depth = 0) {
       </div>
       <form class="discussion-reply-form hidden" data-parent-id="${escapeHtml(comment.id)}">
         <textarea rows="2" maxlength="1000" placeholder="回复这条评论"></textarea>
+        ${discussionScopeOptionsHtml("replyScope")}
         <div class="compact-actions"><button class="primary" type="submit">提交回复</button><button class="secondary cancel-reply" type="button">取消</button></div>
       </form>
       ${children.length ? `<div class="discussion-children">${children.map((child) => discussionCommentHtml(child, childrenMap, depth + 1)).join("")}</div>` : ""}
@@ -900,18 +937,30 @@ function renderDiscussionComments(comments) {
   });
 
   discussionList.querySelectorAll(".cancel-reply").forEach((button) => {
-    button.addEventListener("click", () => button.closest("form").classList.add("hidden"));
+    button.addEventListener("click", () => {
+      const form = button.closest("form");
+      form.reset();
+      form.classList.add("hidden");
+    });
   });
 
   discussionList.querySelectorAll(".discussion-reply-form").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const content = form.querySelector("textarea").value.trim();
-      if (!content) return;
+      const restaurantScope = form.querySelector('input[name="replyScope"]:checked')?.value || "";
+      if (!content) {
+        discussionMessage.textContent = "请输入回复内容。";
+        return;
+      }
+      if (!restaurantScope) {
+        discussionMessage.textContent = "请选择303荷特宝、299七立方或两者皆有。";
+        return;
+      }
       const submit = form.querySelector("button[type='submit']");
       submit.disabled = true;
       try {
-        await addDiscussionComment(form.dataset.parentId, content);
+        await addDiscussionComment(form.dataset.parentId, content, restaurantScope);
         discussionMessage.textContent = "回复已发布。";
         await loadDiscussion();
       } catch (error) {
@@ -944,12 +993,13 @@ async function deleteDiscussionComment(id, button) {
   }
 }
 
-async function addDiscussionComment(parentId, content) {
+async function addDiscussionComment(parentId, content, restaurantScope) {
   return supabaseFetch("rpc/add_discussion_comment", {
     method: "POST",
     body: JSON.stringify({
       p_parent_id: parentId || null,
       p_content: content.slice(0, 1000),
+      p_restaurant_scope: normalizeDiscussionScope(restaurantScope),
       p_visitor_key: getVisitorKey()
     })
   });
@@ -958,7 +1008,13 @@ async function addDiscussionComment(parentId, content) {
 async function loadDiscussion() {
   discussionMessage.textContent = "正在加载意见...";
   try {
-    const rows = await supabaseFetch(`discussion_comments?select=${DISCUSSION_COLUMNS}&order=created_at.asc&limit=2000`);
+    let rows;
+    try {
+      rows = await supabaseFetch(`discussion_comments?select=${DISCUSSION_COLUMNS}&order=created_at.asc&limit=2000`);
+    } catch (error) {
+      if (!/restaurant_scope/i.test(String(error?.message || error || ""))) throw error;
+      rows = await supabaseFetch(`discussion_comments?select=${DISCUSSION_LEGACY_COLUMNS}&order=created_at.asc&limit=2000`);
+    }
     renderDiscussionComments((Array.isArray(rows) ? rows : []).map(normalizeDiscussionComment));
     discussionMessage.textContent = "";
   } catch (error) {
@@ -1049,6 +1105,7 @@ function updateRankingPeriod(startDate = "", endDate = "") {
 function setRankingMode(mode) {
   if (!["biweekly", "total"].includes(mode) || mode === rankingMode) return;
   rankingMode = mode;
+  document.querySelector("#rankingPeriod").classList.toggle("hidden", mode === "total");
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => {
     const active = button.dataset.rankingMode === mode;
     button.classList.toggle("active", active);
@@ -2147,23 +2204,29 @@ function bindEvents() {
     document.querySelector("#discussionInput").focus();
   });
   document.querySelector("#cancelDiscussionComposer").addEventListener("click", () => {
-    document.querySelector("#discussionForm").classList.add("hidden");
-    document.querySelector("#discussionInput").value = "";
+    const form = document.querySelector("#discussionForm");
+    form.reset();
+    form.classList.add("hidden");
   });
   document.querySelector("#discussionForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const input = document.querySelector("#discussionInput");
     const content = input.value.trim();
+    const restaurantScope = form.querySelector('input[name="discussionScope"]:checked')?.value || "";
     if (!content) {
       discussionMessage.textContent = "请输入意见内容。";
+      return;
+    }
+    if (!restaurantScope) {
+      discussionMessage.textContent = "请选择303荷特宝、299七立方或两者皆有。";
       return;
     }
     const button = form.querySelector("button[type='submit']");
     button.disabled = true;
     try {
-      await addDiscussionComment(null, content);
-      input.value = "";
+      await addDiscussionComment(null, content, restaurantScope);
+      form.reset();
       form.classList.add("hidden");
       await loadDiscussion();
       discussionMessage.textContent = "意见已发布。";
