@@ -177,6 +177,15 @@
     };
   }
 
+  function recentTwoWeekRange(now = new Date()) {
+    const end = new Date(now);
+    return {
+      start: new Date(end.getTime() - 14 * 24 * 60 * 60 * 1000),
+      end: new Date(end.getTime() + 1),
+      label: "最近两周"
+    };
+  }
+
   function inDateRange(row, range) {
     const date = rowDate(row);
     return Boolean(date && date >= range.start && date < range.end);
@@ -846,6 +855,7 @@
 
   async function collectReportData(monthly) {
     const range = monthRange();
+    const discussionRange = recentTwoWeekRange();
     const [dishes, voteResult, commentResult, postResult, replyResult, analyticsResult, monthlyMetrics] = await Promise.all([
       fetchDishes(),
       fetchAllTables(TABLE_CANDIDATES.votes),
@@ -903,6 +913,7 @@
 
     const discussionPosts = uniqueCommentRows([...postResult.rows, ...replyResult.rows])
       .filter(isTopLevelPost)
+      .filter((row) => !monthly || inDateRange(row, discussionRange))
       .sort((a, b) => commentLikeCount(b) - commentLikeCount(a) || (rowDate(b)?.getTime() || 0) - (rowDate(a)?.getTime() || 0))
       .slice(0, 10);
 
@@ -922,6 +933,7 @@
       qilifang,
       hotbaoComments: commentHighlights("荷特宝"),
       qilifangComments: commentHighlights("七立方"),
+      discussionPeriodLabel: monthly ? discussionRange.label : "全部意见",
       discussionPosts
     };
   }
@@ -1945,11 +1957,13 @@
 
   function templateDiscussionPage(data) {
     const posts = data.discussionPosts?.slice(0, 10) || [];
+    const title = data.monthly ? `食堂意见交流 · ${data.discussionPeriodLabel}` : "食堂意见交流";
+    const emptyText = data.monthly ? `${data.discussionPeriodLabel}暂无意见交流内容` : "暂无意见交流内容";
     return `
       <section class="template-report-page">
-        ${templateHeader("食堂意见交流", data)}
+        ${templateHeader(title, data)}
         <div class="template-forum-board">
-          ${posts.length ? posts.map(templateDiscussionPost).join("") : `<div class="template-empty">暂无意见交流内容</div>`}
+          ${posts.length ? posts.map(templateDiscussionPost).join("") : `<div class="template-empty">${escapeHtml(emptyText)}</div>`}
         </div>
         ${templateFooter(data)}
       </section>`;
