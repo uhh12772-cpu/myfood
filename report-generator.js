@@ -186,6 +186,47 @@
     };
   }
 
+  function dateKeyInShanghai(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  function dateKeyToShanghaiStart(dateKey) {
+    return new Date(`${dateKey}T00:00:00+08:00`);
+  }
+
+  function formatBiweeklyPeriod(startDate, endDate) {
+    const format = (value) => {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+      return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : "";
+    };
+    const start = format(startDate);
+    const end = format(endDate);
+    return start && end ? `${start} - ${end}` : "最近两周";
+  }
+
+  function biweeklyPeriodRange(now = new Date(), startDate = "", endDate = "") {
+    const resolvedEndDate = endDate || dateKeyInShanghai(now);
+    const resolvedEnd = dateKeyToShanghaiStart(resolvedEndDate);
+    const resolvedStart = new Date(resolvedEnd);
+    resolvedStart.setUTCDate(resolvedStart.getUTCDate() - 13);
+    const resolvedStartDate = startDate || dateKeyInShanghai(resolvedStart);
+    const endExclusive = new Date(resolvedEnd.getTime() + 24 * 60 * 60 * 1000);
+    return {
+      start: dateKeyToShanghaiStart(resolvedStartDate),
+      end: endExclusive,
+      startDate: resolvedStartDate,
+      endDate: resolvedEndDate,
+      label: formatBiweeklyPeriod(resolvedStartDate, resolvedEndDate)
+    };
+  }
+
   function inDateRange(row, range) {
     const date = rowDate(row);
     return Boolean(date && date >= range.start && date < range.end);
@@ -417,6 +458,59 @@
     } catch {
       return { clicks: 0, likes: 0, available: false };
     }
+  }
+
+  async function fetchBiweeklyRanking() {
+    try {
+      const payload = await supabaseFetch("rpc/get_biweekly_dish_ranking", {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      const data = Array.isArray(payload) ? payload[0] || {} : payload || {};
+      const range = biweeklyPeriodRange(new Date(), data.start_date, data.end_date);
+      return {
+        rows: Array.isArray(data.rankings) ? data.rankings : [],
+        range
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function rankingNameKey(value) {
+    return normalizeText(value).replace(/\s+/g, "").toLocaleLowerCase("zh-CN");
+  }
+
+  function uniqueRankedDishes(dishes, limit = 10) {
+    const uniqueByName = new Map();
+    dishes.forEach((dish) => {
+      const key = rankingNameKey(dish.name);
+      if (!key) return;
+      const existing = uniqueByName.get(key);
+      if (!existing || dish.votes > existing.votes || (dish.votes === existing.votes && dish.likes > existing.likes)) {
+        uniqueByName.set(key, dish);
+      }
+    });
+    return Array.from(uniqueByName.values())
+      .sort((a, b) => b.votes - a.votes || b.likes - a.likes || a.name.localeCompare(b.name, "zh-CN"))
+      .slice(0, limit);
+  }
+
+  function normalizeBiweeklyDish(row) {
+    return {
+      id: String(firstValue(row, ["id", "dish_id", "uuid"], "")),
+      name: normalizeText(firstValue(row, ["name", "dish_name", "title", "food_name"], "未命名菜品")),
+      restaurant: normalizeRestaurant(firstValue(row, ["restaurant_key", "restaurant", "restaurant_name"], "")),
+      imageUrl: normalizeText(firstValue(row, ["image_url", "imageUrl", "image", "photo_url"], "")),
+      votes: numberValue(firstValue(row, ["vote_count", "votes", "total_votes"], 0)),
+      likes: 0,
+      reviewLikes: 0,
+      review: ""
+    };
+  }
+
+  function recentVoteCounts(votes, range) {
+    return groupCount(votes.filter((row) => inDateRange(row, range)), dishIdFromRow);
   }
 
   function buildDishRecords(dishes, votes, comments) {
@@ -856,31 +950,41 @@
   async function collectReportData(monthly) {
     const range = monthRange();
     const discussionRange = recentTwoWeekRange();
-    const [dishes, voteResult, commentResult, postResult, replyResult, analyticsResult, monthlyMetrics] = await Promise.all([
+    const defaultBiweeklyRange = biweeklyPeriodRange();
+    const [dishes, voteResult, commentResult, postResult, replyResult, analyticsResult, monthlyMetrics, biweeklyResult] = await Promise.all([
       fetchDishes(),
       fetchAllTables(TABLE_CANDIDATES.votes),
       fetchAllTables(TABLE_CANDIDATES.dishComments),
       fetchFirstNonEmptyTable(TABLE_CANDIDATES.opinionPosts),
       fetchFirstNonEmptyTable(TABLE_CANDIDATES.opinionReplies),
       fetchAllTables(TABLE_CANDIDATES.analytics),
-      fetchMonthlyMetrics(range)
+      fetchMonthlyMetrics(range),
+      monthly ? fetchBiweeklyRanking() : Promise.resolve(null)
     ]);
 
     const records = buildDishRecords(mergeRows(dishes), voteResult.rows, commentResult.rows);
-    const ranked = (restaurant) => {
-      const uniqueByName = new Map();
+    const biweeklyRange = biweeklyResult?.range || defaultBiweeklyRange;
+    const recentCounts = recentVoteCounts(voteResult.rows, biweeklyRange);
+    const rankedTotal = (restaurant) => uniqueRankedDishes(
+      records.filter((dish) => dish.restaurant === restaurant && dish.votes > 0),
+      10
+    );
+    const rankedFallbackBiweekly = (restaurant) => uniqueRankedDishes(
       records
-        .filter((dish) => dish.restaurant === restaurant && dish.votes > 0)
-        .forEach((dish) => {
-          const normalizedName = dish.name.replace(/\s+/g, "").toLocaleLowerCase("zh-CN");
-          const existing = uniqueByName.get(normalizedName);
-          if (!existing || dish.votes > existing.votes || (dish.votes === existing.votes && dish.likes > existing.likes)) {
-            uniqueByName.set(normalizedName, dish);
-          }
-        });
-      return Array.from(uniqueByName.values())
-        .sort((a, b) => b.votes - a.votes || b.likes - a.likes || a.name.localeCompare(b.name, "zh-CN"))
-        .slice(0, 10);
+        .filter((dish) => dish.restaurant === restaurant)
+        .map((dish) => ({ ...dish, votes: recentCounts.get(dish.id) || 0 }))
+        .filter((dish) => dish.votes > 0),
+      10
+    );
+    const rankedRemoteBiweekly = (restaurant) => uniqueRankedDishes(
+      (biweeklyResult?.rows || [])
+        .map(normalizeBiweeklyDish)
+        .filter((dish) => dish.restaurant === restaurant && dish.votes > 0),
+      10
+    );
+    const ranked = (restaurant) => {
+      if (!monthly) return rankedTotal(restaurant);
+      return biweeklyResult ? rankedRemoteBiweekly(restaurant) : rankedFallbackBiweekly(restaurant);
     };
 
     const allCommentRows = uniqueCommentRows([
@@ -920,6 +1024,7 @@
     return {
       monthly,
       periodLabel: monthly ? range.label : "全部数据",
+      rankingPeriodLabel: monthly ? `双周周期：${biweeklyRange.label}` : "累计总榜",
       publishedAt: new Date(),
       metrics: monthly
         ? {
@@ -1588,12 +1693,25 @@
       .template-forum-meta {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
+        gap: 8px;
         margin-top: 5px;
         color: #728799;
         font-size: 9px;
       }
-      .template-forum-actions { color: #587081; }
+      .template-forum-tags { display: inline-flex; gap: 4px; }
+      .template-forum-tag {
+        display: inline-block;
+        padding: 1px 4px;
+        border: 1px solid #c9deda;
+        border-radius: 3px;
+        background: #f2fbf9;
+        color: #2f7770;
+        font-size: 8px;
+        line-height: 1.2;
+      }
+      .template-forum-tag.qilifang { border-color: #cbd8ed; background: #f3f7fd; color: #4d6d9d; }
+      .template-forum-actions { margin-left: auto; color: #587081; }
       .template-empty { color: #788a92; font-size: 18px; text-align: center; padding-top: 160px; }
       .template-restaurant-title {
         position: absolute;
@@ -1904,18 +2022,39 @@
       </article>`;
   }
 
+  function normalizeDiscussionScope(value) {
+    const text = normalizeText(value).toLowerCase();
+    if (/两者|both|303.*299|299.*303|hotbao.*qilifang|qilifang.*hotbao/.test(text)) return "both";
+    if (/七立方|7立方|299|qilifang|qi.?li.?fang|seven|qlf/.test(text)) return "qilifang";
+    if (/荷特宝|303|hetebao|hotebao|hotbao|he.?te.?bao|htb/.test(text)) return "hotbao";
+    return "both";
+  }
+
+  function templateDiscussionTags(row) {
+    const scope = normalizeDiscussionScope(firstValue(row, ["restaurant_scope", "restaurantScope", "scope"], "both"));
+    const tags = [];
+    if (scope === "hotbao" || scope === "both") {
+      tags.push(`<span class="template-forum-tag">303荷特宝</span>`);
+    }
+    if (scope === "qilifang" || scope === "both") {
+      tags.push(`<span class="template-forum-tag qilifang">299七立方</span>`);
+    }
+    return `<span class="template-forum-tags">${tags.join("")}</span>`;
+  }
+
   function templateRestaurantPage(data, restaurant, dishes, comments, pageNumber) {
     const displayName = reportRestaurantName(restaurant);
     const className = restaurant === "qilifang" ? "qilifang" : "hotbao";
     const rankingRows = dishes.slice(0, 10).map(templateRestaurantRedRow).join("");
     const commentRows = comments.slice(0, 8).map(templateRestaurantCommentRow).join("");
+    const rankingLabel = data.monthly ? data.rankingPeriodLabel : "累计总榜";
     return `
       <section class="template-report-page">
-        ${templateHeader(`${displayName}  红榜与吐槽榜`, data)}
+        ${templateHeader(`${displayName}  红榜与吐槽榜（${rankingLabel}）`, data)}
         <div class="template-restaurant-title ${className}"><span>${displayName}</span><span>红榜 + 吐槽榜</span></div>
         <div class="template-restaurant-board">
           <section class="template-restaurant-panel ${className}">
-            <div class="template-restaurant-panel-heading"><strong>${displayName} 红榜</strong><span>投票数 TOP 10</span></div>
+            <div class="template-restaurant-panel-heading"><strong>${displayName} 红榜</strong><span>${escapeHtml(rankingLabel)} · TOP 10</span></div>
             <div class="template-restaurant-list">
               ${rankingRows || `<div class="template-restaurant-empty">暂无带投票数的菜品数据</div>`}
             </div>
@@ -1951,7 +2090,7 @@
     return `
       <article class="template-forum-post">
         <div class="template-forum-content">${escapeHtml(content)}</div>
-        <div class="template-forum-meta"><span>${escapeHtml(published)}</span><span class="template-forum-actions">赞同 ${formatNumber(likes)}　回复</span></div>
+        <div class="template-forum-meta"><span>${escapeHtml(published)}</span>${templateDiscussionTags(row)}<span class="template-forum-actions">赞同 ${formatNumber(likes)}　回复</span></div>
       </article>`;
   }
 
