@@ -1935,7 +1935,7 @@
   }
 
   function templateHeader(title, data) {
-    return `<div class="template-header">WLSA食堂菜品票选结果（第三期）：${escapeHtml(title)}</div>`;
+    return `<div class="template-header">WLSA食堂菜品票选结果（第四期）：${escapeHtml(title)}</div>`;
   }
 
   function templateFooter(data) {
